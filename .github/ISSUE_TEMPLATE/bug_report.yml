@@ -1,0 +1,48 @@
+name: Bug report
+description: Сообщить о воспроизводимой ошибке
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Не публикуйте API key, API hash, номер телефона и файл Telegram-сессии.
+  - type: textarea
+    id: description
+    attributes:
+      label: Описание
+      description: Что произошло и какого поведения вы ожидали?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Шаги воспроизведения
+      placeholder: |
+        1. Запустить...
+        2. Выбрать...
+        3. Увидеть ошибку...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Версия Python
+      placeholder: Python 3.12.x
+    validations:
+      required: true
+  - type: dropdown
+    id: audio-mode
+    attributes:
+      label: Режим аудио
+      options:
+        - placeholder
+        - mixed
+        - audio
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Журнал
+      description: Приложите релевантный фрагмент app.log после удаления секретов.
+      render: shell
