@@ -205,6 +205,18 @@ Open **Settings** from the tray menu, request a new Telegram code, and sign in a
 Check the hidden icons behind the `^` arrow. If the process has exited, run `start_console.bat` and inspect the reported error.
 </details>
 
+<details>
+<summary><strong>Setup reports that no suitable Python runtime was found</strong></summary>
+
+Allow `setup.ps1` to install Python when prompted, or install it manually and rerun the script:
+
+```powershell
+winget install --id Python.Python.3.12 -e
+```
+
+If Python was installed manually, open a new PowerShell window before running `setup.ps1` again.
+</details>
+
 ## Development
 
 ```powershell

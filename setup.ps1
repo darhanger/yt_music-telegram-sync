@@ -25,8 +25,16 @@ function Find-CompatiblePython {
             continue
         }
         $arguments = @($candidate.Arguments)
-        & $candidate.Command @arguments -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)" 2>$null
-        if ($LASTEXITCODE -eq 0) {
+        $previousErrorActionPreference = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = "SilentlyContinue"
+            $null = & $candidate.Command @arguments -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)" 2>&1
+            $probeExitCode = $LASTEXITCODE
+        }
+        finally {
+            $ErrorActionPreference = $previousErrorActionPreference
+        }
+        if ($probeExitCode -eq 0) {
             return $candidate
         }
     }
