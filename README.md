@@ -51,7 +51,7 @@ The application:
 ### Requirements
 
 - Windows 10 or 11;
-- Python 3.12 x64 — recommended;
+- Python 3.11 or newer; Python 3.12 x64 is recommended;
 - Last.fm and Telegram accounts;
 - a [Last.fm API key](https://www.last.fm/api/account/create);
 - Telegram `api_id` and `api_hash` from [my.telegram.org/apps](https://my.telegram.org/apps);
@@ -67,7 +67,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\setup.ps1
 ```
 
-The script creates `.venv`, installs the application, and opens the setup wizard. Then:
+The script locates a compatible installed Python, creates `.venv`, installs the application, and opens the setup wizard. If Python is missing and `winget` is available, it offers to install Python 3.12. Then:
 
 1. Enter your Last.fm username and API key.
 2. Select **Check Last.fm**.
@@ -220,7 +220,7 @@ Project structure:
 ```text
 src/yt_music_telegram_sync/  application and CLI
 tests/                       unit and regression tests
-.github/workflows/           Windows CI for Python 3.11–3.13
+.github/workflows/           Windows CI for Python 3.11–3.14
 setup.ps1                    installation and initial setup
 start_tray.vbs               silent system-tray launcher
 start_console.bat            diagnostic launcher

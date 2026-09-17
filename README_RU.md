@@ -51,7 +51,7 @@ flowchart LR
 ### Требования
 
 - Windows 10 или 11;
-- Python 3.12 x64 — рекомендуемая версия;
+- Python 3.11 или новее; рекомендуемая версия — Python 3.12 x64;
 - аккаунты [Last.fm](https://www.last.fm/) и Telegram;
 - [Last.fm API key](https://www.last.fm/api/account/create);
 - Telegram `api_id` и `api_hash` с [my.telegram.org/apps](https://my.telegram.org/apps);
@@ -67,7 +67,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\setup.ps1
 ```
 
-Скрипт создаст `.venv`, установит приложение и откроет мастер настройки. Дальше:
+Скрипт найдёт установленный совместимый Python, создаст `.venv`, установит приложение и откроет мастер настройки. Если Python отсутствует, но доступен `winget`, скрипт предложит установить Python 3.12. Дальше:
 
 1. Введите Last.fm username и API key.
 2. Нажмите **Проверить Last.fm**.
@@ -220,7 +220,7 @@ py -3.12 -m venv .venv
 ```text
 src/yt_music_telegram_sync/  приложение и CLI
 tests/                       модульные и регрессионные тесты
-.github/workflows/           Windows CI для Python 3.11–3.13
+.github/workflows/           Windows CI для Python 3.11–3.14
 setup.ps1                    установка и первичная настройка
 start_tray.vbs               тихий запуск в системном трее
 start_console.bat            диагностический запуск
