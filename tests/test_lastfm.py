@@ -81,6 +81,22 @@ class LastFmClientTests(unittest.TestCase):
             client.close()
         self.assertNotIn(secret, str(context.exception))
 
+    def test_client_generated_errors_use_selected_language(self) -> None:
+        def handler(_request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json={"user": {"name": ""}})
+
+        client = LastFmClient(
+            "api-key",
+            "user",
+            transport=httpx.MockTransport(handler),
+            language="en",
+        )
+        try:
+            with self.assertRaisesRegex(LastFmError, "empty username"):
+                client.get_user()
+        finally:
+            client.close()
+
     @staticmethod
     def _client(payload: dict) -> LastFmClient:
         def handler(_request: httpx.Request) -> httpx.Response:

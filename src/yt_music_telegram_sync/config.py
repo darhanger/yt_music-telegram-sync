@@ -7,6 +7,8 @@ from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 from typing import Any
 
+from .localization import SUPPORTED_LANGUAGES, translate
+
 APP_NAME = "YTMusicTelegramSync"
 
 
@@ -55,8 +57,15 @@ class AppConfig:
     audio_mode: str = "placeholder"
     download_workers: int = 2
     remove_when_idle: bool = True
+    telegram_playing_emoji_id: int = 0
+    notifications_enabled: bool = True
+    notification_sound_enabled: bool = True
+    ui_language: str = "ru"
 
     def validate(self) -> None:
+        language = self.ui_language if self.ui_language in SUPPORTED_LANGUAGES else "ru"
+        if self.ui_language not in SUPPORTED_LANGUAGES:
+            raise ConfigurationError(translate("config.language", language))
         missing: list[str] = []
         if not self.lastfm_username.strip():
             missing.append("Last.fm username")
@@ -67,17 +76,21 @@ class AppConfig:
         if not self.telegram_api_hash.strip():
             missing.append("Telegram API hash")
         if missing:
-            raise ConfigurationError("Не заполнено: " + ", ".join(missing))
+            raise ConfigurationError(
+                translate("config.missing", language, fields=", ".join(missing))
+            )
         if self.poll_interval_seconds < 3:
-            raise ConfigurationError("Интервал Last.fm не может быть меньше 3 секунд")
+            raise ConfigurationError(translate("config.poll_min", language))
         if not 1 <= self.absent_confirmations <= 20:
-            raise ConfigurationError("Подтверждений отсутствия должно быть от 1 до 20")
+            raise ConfigurationError(translate("config.absent_range", language))
         if not 1 <= self.cache_size <= 100:
-            raise ConfigurationError("Размер кэша должен быть от 1 до 100")
+            raise ConfigurationError(translate("config.cache_range", language))
         if self.audio_mode not in {"placeholder", "mixed", "audio"}:
-            raise ConfigurationError("Неизвестный режим аудио")
+            raise ConfigurationError(translate("config.audio_mode", language))
         if not 1 <= self.download_workers <= 4:
-            raise ConfigurationError("Количество загрузчиков должно быть от 1 до 4")
+            raise ConfigurationError(translate("config.workers_range", language))
+        if not 0 <= self.telegram_playing_emoji_id <= (1 << 63) - 1:
+            raise ConfigurationError(translate("config.emoji_id", language))
 
     @classmethod
     def load(cls, path: Path | None = None) -> AppConfig:
@@ -85,10 +98,12 @@ class AppConfig:
         try:
             raw = json.loads(config_path.read_text(encoding="utf-8"))
         except FileNotFoundError as exc:
-            raise ConfigurationError("Конфигурация ещё не создана") from exc
+            raise ConfigurationError(
+                translate("config.not_created", "ru")
+            ) from exc
         except (OSError, json.JSONDecodeError) as exc:
             raise ConfigurationError(
-                f"Не удалось прочитать конфигурацию: {exc}"
+                translate("config.read_failed", "ru", error=exc)
             ) from exc
 
         allowed = {field.name for field in fields(cls)}
@@ -96,7 +111,10 @@ class AppConfig:
         try:
             config = cls(**values)
         except TypeError as exc:
-            raise ConfigurationError(f"Некорректная конфигурация: {exc}") from exc
+            language = str(raw.get("ui_language", "ru"))
+            raise ConfigurationError(
+                translate("config.invalid", language, error=exc)
+            ) from exc
         config.validate()
         return config
 

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "yt-music-telegram-sync"
-version = "1.0.0"
+dynamic = ["version"]
 description = "Sync Last.fm now playing tracks to Telegram Music on Profile"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -43,6 +43,9 @@ yt-music-telegram-sync = "yt_music_telegram_sync.__main__:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
+
+[tool.setuptools.dynamic]
+version = {attr = "yt_music_telegram_sync.__version__"}
 
 [tool.setuptools.packages.find]
 where = ["src"]

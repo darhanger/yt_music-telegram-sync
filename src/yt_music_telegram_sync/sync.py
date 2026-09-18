@@ -4,6 +4,7 @@ import logging
 import os
 import tempfile
 import threading
+import time
 from collections import OrderedDict
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -12,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from .audio import PlaceholderBackend, TrackBackend
+from .localization import translate
 from .models import Track
 from .telegram import TelegramError, TelegramManager
 
@@ -40,6 +42,8 @@ class TrackSyncService:
         download_workers: int = 2,
         initial_entries: list[CachedTrack] | None = None,
         cache_changed: Callable[[list[CachedTrack]], None] | None = None,
+        playing_emoji_id: int = 0,
+        language: str = "ru",
     ) -> None:
         self._telegram = telegram
         self._immediate_backend = immediate_backend
@@ -52,6 +56,10 @@ class TrackSyncService:
         self._replacement_sequence = 0
         self._lock = threading.RLock()
         self._cache_changed = cache_changed
+        self._playing_emoji_id = playing_emoji_id
+        self._language = language
+        self._playing_emoji_active = False
+        self._next_emoji_attempt = 0.0
         if initial_entries:
             for entry in initial_entries[-cache_size:]:
                 self._cache[entry.track.identity] = entry
@@ -98,9 +106,46 @@ class TrackSyncService:
         log.info("Трек добавлен в Telegram: %s", track.display_name)
 
     def handle_no_track(self, remove_when_idle: bool) -> None:
+        self.handle_scrobbling_inactive()
         self._active_identity = None
         if remove_when_idle:
             self.clear()
+
+    def handle_scrobbling_active(self) -> None:
+        now = time.monotonic()
+        if (
+            self._playing_emoji_id <= 0
+            or self._playing_emoji_active
+            or now < self._next_emoji_attempt
+        ):
+            return
+        try:
+            activated = self._telegram.activate_playing_emoji(self._playing_emoji_id)
+        except Exception:
+            self._next_emoji_attempt = now + 60.0
+            log.exception("Не удалось установить Telegram emoji status")
+            return
+        if activated:
+            self._playing_emoji_active = True
+            self._next_emoji_attempt = 0.0
+        else:
+            self._next_emoji_attempt = now + 300.0
+
+    def handle_scrobbling_inactive(self) -> None:
+        if self._playing_emoji_id <= 0 or not self._playing_emoji_active:
+            self._next_emoji_attempt = 0.0
+            return
+        now = time.monotonic()
+        if now < self._next_emoji_attempt:
+            return
+        try:
+            self._telegram.restore_emoji_status()
+        except Exception:
+            self._next_emoji_attempt = now + 60.0
+            log.exception("Не удалось восстановить Telegram emoji status")
+            return
+        self._playing_emoji_active = False
+        self._next_emoji_attempt = 0.0
 
     def clear(self) -> None:
         failed: list[CachedTrack] = []
@@ -120,8 +165,11 @@ class TrackSyncService:
         self._notify_cache_changed()
         if failed:
             raise TelegramError(
-                f"Не удалось удалить треков из профиля: {len(failed)}. "
-                "Они сохранены для повторной очистки."
+                translate(
+                    "sync.cleanup_failed",
+                    self._language,
+                    count=len(failed),
+                )
             )
         log.info("Музыкальный кэш Telegram очищен")
 
@@ -151,6 +199,15 @@ class TrackSyncService:
             processed += 1
 
     def close(self) -> None:
+        if self._playing_emoji_active:
+            try:
+                self._telegram.restore_emoji_status()
+            except Exception:
+                log.exception(
+                    "Не удалось восстановить Telegram emoji status при завершении"
+                )
+            else:
+                self._playing_emoji_active = False
         with self._lock:
             for entry in self._replacement_queue.values():
                 if entry.replacement_state == "pending":

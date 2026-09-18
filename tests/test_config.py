@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -20,6 +21,49 @@ class ConfigTests(unittest.TestCase):
         with self.assertRaises(ConfigurationError):
             config.validate()
 
+    def test_existing_config_defaults_to_russian(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "config.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "lastfm_username": "user",
+                        "lastfm_api_key": "key",
+                        "telegram_api_id": 123,
+                        "telegram_api_hash": "hash",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            loaded = AppConfig.load(path)
+
+        self.assertEqual(loaded.ui_language, "ru")
+
+    def test_rejects_negative_emoji_status_id(self) -> None:
+        config = self._valid_config()
+        config.telegram_playing_emoji_id = -1
+        with self.assertRaises(ConfigurationError):
+            config.validate()
+
+    def test_validation_errors_use_selected_language(self) -> None:
+        config = self._valid_config()
+        config.ui_language = "en"
+        config.poll_interval_seconds = 1
+
+        with self.assertRaisesRegex(
+            ConfigurationError,
+            "cannot be shorter than 3 seconds",
+        ):
+            config.validate()
+
+    def test_rejects_unknown_interface_language(self) -> None:
+        config = self._valid_config()
+        config.ui_language = "de"
+
+        with self.assertRaises(ConfigurationError):
+            config.validate()
+
     @staticmethod
     def _valid_config() -> AppConfig:
         return AppConfig(
@@ -27,6 +71,10 @@ class ConfigTests(unittest.TestCase):
             lastfm_api_key="key",
             telegram_api_id=123,
             telegram_api_hash="hash",
+            telegram_playing_emoji_id=777,
+            notifications_enabled=False,
+            notification_sound_enabled=False,
+            ui_language="en",
         )
 
 

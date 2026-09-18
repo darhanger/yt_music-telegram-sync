@@ -4,8 +4,14 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
+from telethon import functions, types
+
 from yt_music_telegram_sync.models import Track
-from yt_music_telegram_sync.telegram import TelegramManager, _track_filename
+from yt_music_telegram_sync.telegram import (
+    TelegramManager,
+    _emoji_status_for_update,
+    _track_filename,
+)
 
 
 class TelegramFilenameTests(unittest.TestCase):
@@ -57,6 +63,106 @@ class TelegramManagerTests(unittest.TestCase):
         client.get_messages.assert_awaited_once_with("me", ids=[42])
         client.delete_messages.assert_awaited_once_with("me", 42)
         client.disconnect.assert_called_once_with()
+
+    def test_playing_emoji_restores_previous_status(self) -> None:
+        client, state, requests = self._emoji_client(
+            premium=True,
+            status=types.EmojiStatus(document_id=111),
+        )
+        with TemporaryDirectory() as directory:
+            with patch(
+                "yt_music_telegram_sync.telegram.TelegramClient",
+                return_value=client,
+            ):
+                manager = TelegramManager(Path(directory) / "telegram", 1, "hash")
+                self.assertTrue(manager.activate_playing_emoji(222))
+                manager.restore_emoji_status()
+                manager.close()
+
+        self.assertEqual(
+            [request.emoji_status.document_id for request in requests],
+            [222, 111],
+        )
+        self.assertEqual(state["status"].document_id, 111)
+
+    def test_manual_emoji_change_is_not_overwritten(self) -> None:
+        client, state, requests = self._emoji_client(
+            premium=True,
+            status=types.EmojiStatus(document_id=111),
+        )
+        with TemporaryDirectory() as directory:
+            with patch(
+                "yt_music_telegram_sync.telegram.TelegramClient",
+                return_value=client,
+            ):
+                manager = TelegramManager(Path(directory) / "telegram", 1, "hash")
+                manager.activate_playing_emoji(222)
+                state["status"] = types.EmojiStatus(document_id=333)
+                manager.restore_emoji_status()
+                manager.close()
+
+        self.assertEqual(len(requests), 1)
+        self.assertEqual(state["status"].document_id, 333)
+
+    def test_playing_emoji_requires_premium(self) -> None:
+        client, state, requests = self._emoji_client(
+            premium=False,
+            status=types.EmojiStatusEmpty(),
+        )
+        with TemporaryDirectory() as directory:
+            with patch(
+                "yt_music_telegram_sync.telegram.TelegramClient",
+                return_value=client,
+            ):
+                manager = TelegramManager(Path(directory) / "telegram", 1, "hash")
+                self.assertFalse(manager.activate_playing_emoji(222))
+                manager.close()
+
+        self.assertIsInstance(state["status"], types.EmojiStatusEmpty)
+        self.assertEqual(requests, [])
+
+    @staticmethod
+    def _emoji_client(*, premium: bool, status):
+        state = {"status": status}
+        requests = []
+        client = Mock()
+        client.get_me = AsyncMock(
+            side_effect=lambda: SimpleNamespace(
+                premium=premium,
+                emoji_status=state["status"],
+            )
+        )
+
+        async def handle_request(request):
+            if isinstance(request, functions.account.UpdateEmojiStatusRequest):
+                requests.append(request)
+                state["status"] = request.emoji_status
+                return True
+            raise AssertionError(type(request))
+
+        client.side_effect = handle_request
+        client.is_connected.return_value = True
+        client.disconnect = Mock(return_value=None)
+        return client, state, requests
+
+
+class TelegramEmojiStatusTests(unittest.TestCase):
+    def test_collectible_status_is_converted_for_restoration(self) -> None:
+        original = types.EmojiStatusCollectible(
+            collectible_id=10,
+            document_id=20,
+            title="Gift",
+            slug="gift",
+            pattern_document_id=30,
+            center_color=1,
+            edge_color=2,
+            pattern_color=3,
+            text_color=4,
+        )
+        restored = _emoji_status_for_update(original)
+
+        self.assertIsInstance(restored, types.InputEmojiStatusCollectible)
+        self.assertEqual(restored.collectible_id, 10)
 
 
 if __name__ == "__main__":

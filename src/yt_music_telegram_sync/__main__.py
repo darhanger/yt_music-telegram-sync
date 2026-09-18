@@ -8,7 +8,9 @@ import time
 from pathlib import Path
 from tkinter import messagebox
 
+from . import __version__
 from .config import AppConfig, ConfigurationError, default_config_path
+from .localization import translate
 from .logging_setup import configure_logging
 from .service import ServiceStatus, SyncApplicationService
 from .setup_wizard import run_setup
@@ -19,7 +21,11 @@ log = logging.getLogger(__name__)
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Last.fm -> Telegram music sync")
+    parser = argparse.ArgumentParser(
+        prog="yt-music-telegram-sync",
+        description="Last.fm -> Telegram music sync",
+    )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--setup", action="store_true", help="открыть мастер настройки")
     mode.add_argument("--tray", action="store_true", help="работать в системном трее")
@@ -54,7 +60,10 @@ def main(argv: list[str] | None = None) -> int:
 
     with SingleInstance() as instance:
         if instance.already_running:
-            _show_error("Приложение уже запущено", console)
+            _show_error(
+                translate("app.already_running", config.ui_language),
+                console,
+            )
             return 2
         service = SyncApplicationService(
             config, status_callback=_console_status if console else None

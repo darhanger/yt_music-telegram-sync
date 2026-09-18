@@ -5,6 +5,7 @@ from typing import Any, Self
 
 import httpx
 
+from .localization import translate
 from .models import Track
 
 API_URL = "https://ws.audioscrobbler.com/2.0/"
@@ -35,9 +36,11 @@ class LastFmClient:
         *,
         timeout_seconds: float = 10.0,
         transport: httpx.BaseTransport | None = None,
+        language: str = "ru",
     ) -> None:
         self.api_key = api_key
         self.username = username
+        self._language = language
         self._client = httpx.Client(
             base_url=API_URL,
             headers={"User-Agent": USER_AGENT},
@@ -59,10 +62,10 @@ class LastFmClient:
         payload = self._request("user.getInfo", user=self.username)
         user = payload.get("user")
         if not isinstance(user, dict):
-            raise LastFmError("Last.fm вернул ответ без пользователя")
+            raise LastFmError(translate("lastfm.no_user", self._language))
         username = _text(user.get("name"))
         if not username:
-            raise LastFmError("Last.fm вернул пустое имя пользователя")
+            raise LastFmError(translate("lastfm.empty_user", self._language))
         return LastFmUser(username=username, real_name=_text(user.get("realname")))
 
     def get_now_playing(self) -> Track | None:
@@ -83,7 +86,7 @@ class LastFmClient:
 
         if raw_track is None or not _is_now_playing(raw_track):
             return None
-        return _parse_track(raw_track)
+        return _parse_track(raw_track, language=self._language)
 
     def _request(self, method: str, **params: str) -> dict[str, Any]:
         query = {
@@ -98,20 +101,37 @@ class LastFmClient:
             payload = response.json()
         except httpx.HTTPStatusError as exc:
             raise LastFmError(
-                f"Last.fm вернул HTTP {exc.response.status_code}"
+                translate(
+                    "lastfm.http_error",
+                    self._language,
+                    status=exc.response.status_code,
+                )
             ) from exc
         except httpx.RequestError as exc:
-            raise LastFmError(f"Сетевая ошибка Last.fm ({type(exc).__name__})") from exc
+            raise LastFmError(
+                translate(
+                    "lastfm.network_error",
+                    self._language,
+                    error_type=type(exc).__name__,
+                )
+            ) from exc
         except ValueError as exc:
-            raise LastFmError("Last.fm вернул некорректный JSON") from exc
+            raise LastFmError(
+                translate("lastfm.invalid_json", self._language)
+            ) from exc
         if not isinstance(payload, dict):
-            raise LastFmError("Last.fm вернул неожиданный формат ответа")
+            raise LastFmError(
+                translate("lastfm.unexpected_response", self._language)
+            )
         if "error" in payload:
             try:
                 code = int(payload["error"])
             except (TypeError, ValueError):
                 code = None
-            message = _text(payload.get("message")) or "Неизвестная ошибка Last.fm"
+            message = _text(payload.get("message")) or translate(
+                "lastfm.unknown_error",
+                self._language,
+            )
             raise LastFmError(message, code)
         return payload
 
@@ -124,11 +144,11 @@ def _is_now_playing(raw_track: dict[str, Any]) -> bool:
     return str(value).casefold() == "true"
 
 
-def _parse_track(raw_track: dict[str, Any]) -> Track:
+def _parse_track(raw_track: dict[str, Any], *, language: str = "ru") -> Track:
     title = _text(raw_track.get("name"))
     artist = _nested_text(raw_track.get("artist"))
     if not title or not artist:
-        raise LastFmError("У текущего трека отсутствуют название или исполнитель")
+        raise LastFmError(translate("lastfm.track_metadata_missing", language))
 
     images = raw_track.get("image")
     cover_url = ""

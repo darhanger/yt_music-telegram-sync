@@ -24,6 +24,9 @@ class FakeTelegram:
         self.saved: list[tuple[int, bool]] = []
         self.deleted: list[int] = []
         self.unsave_failures: set[int] = set()
+        self.activated_emojis: list[int] = []
+        self.emoji_active = False
+        self.emoji_restore_count = 0
 
     def send_track(self, _path: Path, _track: Track):
         message = FakeMessage(self.next_id)
@@ -37,6 +40,17 @@ class FakeTelegram:
 
     def delete_message(self, message_id: int) -> None:
         self.deleted.append(message_id)
+
+    def activate_playing_emoji(self, document_id: int) -> bool:
+        if not self.emoji_active:
+            self.activated_emojis.append(document_id)
+            self.emoji_active = True
+        return True
+
+    def restore_emoji_status(self) -> None:
+        if self.emoji_active:
+            self.emoji_active = False
+            self.emoji_restore_count += 1
 
 
 class TrackSyncTests(unittest.TestCase):
@@ -138,6 +152,26 @@ class TrackSyncTests(unittest.TestCase):
 
         self.assertEqual(telegram.deleted, [1])
         self.assertEqual(changes[-1], [])
+
+    def test_emoji_status_follows_scrobbling_lifecycle(self) -> None:
+        telegram = FakeTelegram()
+        backend = FakeBackend()
+        service = TrackSyncService(
+            telegram,  # type: ignore[arg-type]
+            backend,
+            backend,  # type: ignore[arg-type]
+            cache_size=1,
+            playing_emoji_id=777,
+        )
+        try:
+            service.handle_scrobbling_active()
+            service.handle_scrobbling_active()
+            service.handle_no_track(remove_when_idle=False)
+        finally:
+            service.close()
+
+        self.assertEqual(telegram.activated_emojis, [777])
+        self.assertEqual(telegram.emoji_restore_count, 1)
 
 
 if __name__ == "__main__":

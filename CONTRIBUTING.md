@@ -1,8 +1,10 @@
-# Участие в разработке
+<p align="right">English | <a href="CONTRIBUTING_RU.md">Русский</a></p>
 
-Спасибо за интерес к проекту. Перед началом работы создайте issue с описанием ошибки или предлагаемого изменения.
+# Contributing
 
-## Локальная проверка
+Thank you for your interest in the project. Before starting a substantial change, open an issue describing the problem and the proposed solution.
+
+## Local development
 
 ```powershell
 py -3.12 -m venv .venv
@@ -12,4 +14,30 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-Сохраняйте изменения небольшими и целевыми. Новое поведение должно быть покрыто тестами. Не добавляйте в issue, коммиты или логи Telegram-сессии, API key, API hash, номера телефонов и другие персональные данные.
+Keep changes small and focused, preserve the existing architecture and naming, and add regression tests for new behavior. Pull requests must pass the Windows CI matrix for Python 3.11–3.14.
+
+## Pull requests
+
+- Explain the user-visible behavior and any compatibility implications.
+- Do not combine unrelated refactoring with a feature or bug fix.
+- Update both `README.md` and `README_RU.md` when behavior or setup changes.
+- Keep `CONTRIBUTING.md` and `CONTRIBUTING_RU.md` equivalent.
+
+## Releases
+
+Maintainers create a release with a clean working tree:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\release.ps1 -Version 1.2.0 -Push
+```
+
+The script updates the application version, runs all checks, creates a release commit when the version changes and the matching `v1.2.0` tag, then pushes both when `-Push` is specified. Pushing the tag starts the GitHub release workflow, which verifies the tag, builds the wheel and source archive, and publishes a GitHub Release with generated notes.
+
+Commits and tags are unsigned by default so the script also works with a non-interactive GPG setup. Add `-SignCommit -SignTag` when a configured GPG agent is available.
+
+Use semantic versioning: patch for compatible fixes, minor for compatible features, and major for breaking changes.
+
+## Security and privacy
+
+Never include Telegram sessions, API keys, API hashes, phone numbers, configuration files, or personal log fragments in issues, commits, screenshots, or test fixtures. If credentials were exposed, revoke or rotate them before publishing the repository.

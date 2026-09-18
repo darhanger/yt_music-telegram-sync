@@ -43,6 +43,9 @@ The application:
 - publishes either a placeholder or a real MP3 with title, artist, and artwork;
 - maintains a bounded LRU cache and restores it after a restart;
 - removes tracks added during the listening session after playback stops;
+- can set a Telegram Premium emoji status while `nowplaying` is active and restore the previous one;
+- provides Russian and English localization for the setup window and system tray;
+- lets you disable tray notifications or keep them visible without sound;
 - supports pause, manual synchronization, and cleanup from the tray menu;
 - never stores your Last.fm password, Telegram login code, or Telegram 2FA password.
 
@@ -57,6 +60,7 @@ The application:
 - Telegram `api_id` and `api_hash` from [my.telegram.org/apps](https://my.telegram.org/apps);
 - a scrobbler that sends YouTube Music playback to Last.fm;
 - FFmpeg only for the `mixed` and `audio` modes.
+- Telegram Premium only for automatic emoji status changes.
 
 ### Installation
 
@@ -69,12 +73,14 @@ Set-ExecutionPolicy -Scope Process Bypass
 
 The script locates a compatible installed Python, creates `.venv`, installs the application, and opens the setup wizard. If Python is missing and `winget` is available, it offers to install Python 3.12. Then:
 
-1. Enter your Last.fm username and API key.
-2. Select **Check Last.fm**.
-3. Enter your Telegram API ID, API hash, and phone number in international format.
-4. Select **Send code**, then enter the Telegram login code.
-5. If 2FA is enabled, enter its password — it is used only for this sign-in.
-6. After a successful sign-in, review the remaining options, select an audio mode, and click **Save**.
+1. Select **Русский** or **English** in the upper-right corner.
+2. Enter your Last.fm username and API key.
+3. Select **Test Last.fm**.
+4. Enter your Telegram API ID, API hash, and phone number in international format.
+5. Select **Send code**, then enter the Telegram login code.
+6. If 2FA is enabled, enter its password — it is used only for this sign-in.
+7. Optionally select **Select…** next to the emoji status field and follow the prompt in Telegram.
+8. Review the remaining options, select an audio mode and notification preferences, then click **Save**.
 
 During initial installation, the window closes after saving; then open `start_tray.vbs`. When settings are opened from the tray, saving automatically restarts the application with the new configuration. Closing with the window's X button also saves valid changes; **Cancel** closes without saving.
 
@@ -142,13 +148,19 @@ Press `Ctrl+C` to stop it.
 
 | Option | Purpose |
 |---|---|
+| Language | Switches the setup window immediately; after saving, the tray menu and notifications use the same language |
 | Last.fm polling | Request interval; 5–10 seconds is recommended, 3 is the minimum |
 | Checks before idle | Number of empty responses required to confirm playback has stopped; 3 is recommended |
 | Profile tracks | Maximum LRU cache size |
 | Parallel downloads | Number of background download workers used by `mixed` mode |
+| Emoji status while nowplaying | Optional custom emoji ID for Telegram Premium; clear the field to disable it |
 | Remove music when idle | Removes all tracked session entries from the profile after a confirmed stop |
+| Show system notifications | Enables track, error, cleanup, and settings notifications from the tray application |
+| Play notification sound | Keeps notifications visible but sends them to Windows with the `NIIF_NOSOUND` flag when disabled |
 
 Last.fm does not expose a dedicated `stop` event. Cleanup therefore happens after `nowplaying` disappears and the configured number of empty checks has completed.
+
+The **Select…** button verifies Telegram Premium, remembers the current status, and asks you to set the desired ordinary emoji status in Telegram. After reading its ID, the wizard immediately restores the original status. During synchronization, the selected emoji is set for active `nowplaying` and the previous status is restored after confirmed idle, pause, or a normal application exit. If you manually change the status while listening, that change is preserved.
 
 ## Data and security
 
@@ -165,10 +177,11 @@ All user data is stored outside the repository:
 
 The Last.fm password is not required. Telegram login codes and 2FA passwords are never written to disk. The log filter redacts the Last.fm API key from HTTP errors.
 
-Never publish:
+API keys, hashes, and the phone number are masked by default in the setup window and can be revealed with **Show credentials**. Never publish:
 
 - `telegram.session` or `*.session-journal`;
 - `config.json` or `config.draft.json`;
+- screenshots with revealed credentials;
 - API keys, API hashes, phone numbers, or log fragments containing personal data.
 
 These files are already excluded through `.gitignore`.
@@ -217,6 +230,12 @@ winget install --id Python.Python.3.12 -e
 If Python was installed manually, open a new PowerShell window before running `setup.ps1` again.
 </details>
 
+<details>
+<summary><strong>The listening emoji remains after the application crashed</strong></summary>
+
+The previous emoji status is kept in memory so that a manual status change from another Telegram client is never overwritten. A forced process termination can therefore prevent automatic restoration; clear or change the status in Telegram and restart the application normally.
+</details>
+
 ## Development
 
 ```powershell
@@ -227,6 +246,15 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
+The application version has a single source in `yt_music_telegram_sync.__version__` and is also shown by `--version`, in the setup window, and in the tray tooltip. To prepare and publish a release from a clean working tree:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\release.ps1 -Version 1.2.0 -Push
+```
+
+The script runs all checks, creates a release commit when needed and the `v1.2.0` tag, and pushes them. A tag matching `v*.*.*` starts the GitHub Actions release workflow, which verifies the version, builds a wheel and source ZIP, and creates the GitHub Release with generated notes. See [CONTRIBUTING.md](CONTRIBUTING.md) or [CONTRIBUTING_RU.md](CONTRIBUTING_RU.md).
+
 Project structure:
 
 ```text
@@ -234,6 +262,7 @@ src/yt_music_telegram_sync/  application and CLI
 tests/                       unit and regression tests
 .github/workflows/           Windows CI for Python 3.11–3.14
 setup.ps1                    installation and initial setup
+release.ps1                  version, validation, tagging, and optional push
 start_tray.vbs               silent system-tray launcher
 start_console.bat            diagnostic launcher
 ```

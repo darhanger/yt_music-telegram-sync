@@ -12,6 +12,7 @@ from typing import Literal
 from .audio import ArtworkLoader, PlaceholderBackend, YtDlpBackend
 from .config import AppConfig, default_session_path
 from .lastfm import LastFmClient, LastFmError
+from .localization import translate
 from .models import Track
 from .state import StateStore, StoredTrack
 from .sync import CachedTrack, TrackSyncService
@@ -41,6 +42,7 @@ class SyncApplicationService:
         session_path: Path | None = None,
     ) -> None:
         self.config = config
+        self._language = config.ui_language
         self._status_callback = status_callback
         self._session_path = session_path or default_session_path()
         self._stop_event = threading.Event()
@@ -48,7 +50,10 @@ class SyncApplicationService:
         self._paused = threading.Event()
         self._commands: SimpleQueue[str] = SimpleQueue()
         self._thread: threading.Thread | None = None
-        self._status = ServiceStatus("stopped", "Остановлено")
+        self._status = ServiceStatus(
+            "stopped",
+            translate("service.stopped", self._language),
+        )
         self._status_lock = threading.Lock()
 
     @property
@@ -85,10 +90,17 @@ class SyncApplicationService:
     def toggle_pause(self) -> bool:
         if self._paused.is_set():
             self._paused.clear()
-            self._set_status("running", "Синхронизация возобновлена")
+            self._set_status(
+                "running",
+                translate("service.resumed", self._language),
+            )
         else:
             self._paused.set()
-            self._set_status("paused", "Синхронизация приостановлена")
+            self._commands.put("pause")
+            self._set_status(
+                "paused",
+                translate("service.paused", self._language),
+            )
         self._wake_event.set()
         return self._paused.is_set()
 
@@ -100,20 +112,33 @@ class SyncApplicationService:
         self._wake_event.set()
 
     def _run(self) -> None:
-        self._set_status("starting", "Подключение к Last.fm и Telegram…")
+        self._set_status(
+            "starting",
+            translate("service.connecting", self._language),
+        )
         artwork = ArtworkLoader()
         telegram = TelegramManager(
             self._session_path,
             self.config.telegram_api_id,
             self.config.telegram_api_hash,
+            language=self._language,
         )
-        lastfm = LastFmClient(self.config.lastfm_api_key, self.config.lastfm_username)
+        lastfm = LastFmClient(
+            self.config.lastfm_api_key,
+            self.config.lastfm_username,
+            language=self._language,
+        )
         sync: TrackSyncService | None = None
         try:
             telegram.connect()
             user = lastfm.get_user()
             self._set_status(
-                "running", f"Last.fm подключён: {user.username}; проверка nowplaying…"
+                "running",
+                translate(
+                    "service.connected",
+                    self._language,
+                    username=user.username,
+                ),
             )
             state = StateStore()
             initial_entries = self._restore_entries(state, telegram)
@@ -132,6 +157,8 @@ class SyncApplicationService:
                 cache_changed=lambda entries: state.save(
                     StoredTrack(entry.track, entry.message_id) for entry in entries
                 ),
+                playing_emoji_id=self.config.telegram_playing_emoji_id,
+                language=self._language,
             )
             self._poll_loop(lastfm, sync)
         except Exception as exc:
@@ -144,7 +171,10 @@ class SyncApplicationService:
             telegram.close()
             artwork.close()
             if self.status.kind != "error":
-                self._set_status("stopped", "Остановлено")
+                self._set_status(
+                    "stopped",
+                    translate("service.stopped", self._language),
+                )
 
     def _restore_entries(
         self, state: StateStore, telegram: TelegramManager
@@ -182,13 +212,17 @@ class SyncApplicationService:
                     if absent_count >= self.config.absent_confirmations:
                         sync.handle_no_track(self.config.remove_when_idle)
                         if self.status.kind != "idle":
-                            message = "Last.fm: сейчас ничего не играет"
-                            if self.config.remove_when_idle:
-                                message += "; музыка профиля очищена"
+                            key = (
+                                "service.idle_cleaned"
+                                if self.config.remove_when_idle
+                                else "service.idle"
+                            )
+                            message = translate(key, self._language)
                             self._set_status("idle", message)
                         last_identity = None
                 else:
                     absent_count = 0
+                    sync.handle_scrobbling_active()
                     if track.identity != last_identity:
                         sync.handle_track(track)
                         last_identity = track.identity
@@ -226,10 +260,18 @@ class SyncApplicationService:
             if command == "clear":
                 try:
                     sync.clear()
-                    self._set_status("idle", "Музыка профиля очищена")
+                    self._set_status(
+                        "idle",
+                        translate("service.profile_cleared", self._language),
+                    )
                 except Exception as exc:
                     log.exception("Не удалось очистить музыку профиля")
-                    self._set_status("error", f"Очистка: {exc}")
+                    self._set_status(
+                        "error",
+                        translate("service.clear_error", self._language, error=exc),
+                    )
+            elif command == "pause":
+                sync.handle_scrobbling_inactive()
 
     def _wait(self, timeout: float) -> None:
         self._wake_event.wait(timeout)

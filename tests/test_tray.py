@@ -1,9 +1,12 @@
+import os
 import threading
 import unittest
 from pathlib import Path
 from unittest.mock import ANY, Mock, patch
 
-from yt_music_telegram_sync.tray import TrayController
+from PIL import Image
+
+from yt_music_telegram_sync.tray import TrayController, _NotificationIcon
 
 
 class TraySettingsLifecycleTests(unittest.TestCase):
@@ -70,6 +73,35 @@ class TraySettingsLifecycleTests(unittest.TestCase):
         popen.assert_not_called()
         service.stop.assert_not_called()
         notify.assert_called_once()
+
+    def test_notifications_can_be_disabled(self) -> None:
+        controller = object.__new__(TrayController)
+        controller._notifications_enabled = False
+        controller.icon = Mock()
+
+        controller._notify("Message", "Title")
+
+        controller.icon.notify.assert_not_called()
+
+    def test_tray_text_uses_configured_language(self) -> None:
+        controller = object.__new__(TrayController)
+        controller._language = "en"
+
+        self.assertEqual(controller._t("tray.settings"), "Settings…")
+
+    @unittest.skipUnless(os.name == "nt", "Windows notification flag")
+    def test_notification_sound_can_be_disabled(self) -> None:
+        icon = _NotificationIcon(
+            "test",
+            Image.new("RGBA", (16, 16)),
+            "Title",
+            sound_enabled=False,
+        )
+
+        with patch.object(icon, "_message") as message:
+            icon._notify("Message", "Title")
+
+        self.assertEqual(message.call_args.kwargs["dwInfoFlags"], 0x00000010)
 
 
 if __name__ == "__main__":
