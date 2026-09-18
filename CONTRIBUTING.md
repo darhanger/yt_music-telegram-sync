@@ -32,7 +32,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\release.ps1 -Version 1.2.0 -Push
 ```
 
-The script updates the application version, runs all checks, creates a release commit when the version changes and the matching `v1.2.0` tag, then pushes both when `-Push` is specified. Pushing the tag starts the GitHub release workflow, which verifies the tag, builds the wheel and source archive, and publishes a GitHub Release with generated notes.
+Every successful push to `main` automatically creates a prerelease with a unique tag such as `v1.1.0-build.5.1`. The script above is for stable releases: it updates the application version, runs all checks, creates a release commit when the version changes and the matching `v1.2.0` tag, then pushes both when `-Push` is specified. Pushing the stable tag starts the same release workflow, which verifies the tag, builds the wheel and source archive, and publishes a regular GitHub Release with generated notes.
 
 Commits and tags are unsigned by default so the script also works with a non-interactive GPG setup. Add `-SignCommit -SignTag` when a configured GPG agent is available.
 

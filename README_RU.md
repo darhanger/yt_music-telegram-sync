@@ -253,7 +253,9 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\release.ps1 -Version 1.2.0 -Push
 ```
 
-Скрипт выполняет все проверки, при необходимости создаёт release-коммит и тег `v1.2.0`, затем отправляет их в GitHub. Тег формата `v*.*.*` запускает release workflow в GitHub Actions: версия проверяется, собираются wheel и ZIP с исходниками, после чего создаётся GitHub Release с автоматическим описанием. Подробности находятся в [CONTRIBUTING_RU.md](CONTRIBUTING_RU.md) и [CONTRIBUTING.md](CONTRIBUTING.md).
+Каждый успешный push в `main` запускает release workflow и создаёт prerelease с уникальным тегом вида `v1.1.0-build.5.1`. Перед публикацией выполняются все проверки, собираются wheel и ZIP с исходниками.
+
+Для стабильного релиза используйте команду выше: скрипт при необходимости создаст release-коммит, стабильный тег `v1.2.0` и отправит их в GitHub. Push стабильного тега также запускает release workflow, но публикует обычный GitHub Release вместо prerelease. Подробности находятся в [CONTRIBUTING_RU.md](CONTRIBUTING_RU.md) и [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Структура проекта:
 

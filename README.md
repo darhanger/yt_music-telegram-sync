@@ -253,7 +253,9 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\release.ps1 -Version 1.2.0 -Push
 ```
 
-The script runs all checks, creates a release commit when needed and the `v1.2.0` tag, and pushes them. A tag matching `v*.*.*` starts the GitHub Actions release workflow, which verifies the version, builds a wheel and source ZIP, and creates the GitHub Release with generated notes. See [CONTRIBUTING.md](CONTRIBUTING.md) or [CONTRIBUTING_RU.md](CONTRIBUTING_RU.md).
+Every successful push to `main` starts the release workflow and creates a prerelease with a unique tag such as `v1.1.0-build.5.1`. All checks run before the wheel and source ZIP are published.
+
+Use the command above for a stable release: the script creates a release commit when needed, creates the stable `v1.2.0` tag, and pushes both. Pushing a stable tag also starts the release workflow, but publishes a regular GitHub Release instead of a prerelease. See [CONTRIBUTING.md](CONTRIBUTING.md) or [CONTRIBUTING_RU.md](CONTRIBUTING_RU.md).
 
 Project structure:
 
