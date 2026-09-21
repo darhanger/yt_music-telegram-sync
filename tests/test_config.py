@@ -46,6 +46,52 @@ class ConfigTests(unittest.TestCase):
         with self.assertRaises(ConfigurationError):
             config.validate()
 
+    def test_personal_channel_mode_requires_channel_id(self) -> None:
+        config = self._valid_config()
+        config.telegram_output_mode = "personal_channel"
+        config.telegram_personal_channel_id = 0
+
+        with self.assertRaises(ConfigurationError):
+            config.validate()
+
+        config.telegram_personal_channel_id = 123
+        config.validate()
+
+        config.telegram_output_mode = "profile_and_channel"
+        config.validate()
+        config.telegram_personal_channel_id = 0
+        with self.assertRaises(ConfigurationError):
+            config.validate()
+
+    def test_enabled_emoji_requires_selected_status(self) -> None:
+        config = self._valid_config()
+        config.telegram_playing_emoji_enabled = True
+        config.telegram_playing_emoji_id = 0
+
+        with self.assertRaises(ConfigurationError):
+            config.validate()
+
+    def test_existing_emoji_setting_is_migrated_to_enabled(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "config.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "lastfm_username": "user",
+                        "lastfm_api_key": "key",
+                        "telegram_api_id": 123,
+                        "telegram_api_hash": "hash",
+                        "telegram_playing_emoji_id": 777,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            loaded = AppConfig.load(path)
+
+        self.assertTrue(loaded.telegram_playing_emoji_enabled)
+        self.assertEqual(loaded.telegram_playing_emoji_id, 777)
+
     def test_validation_errors_use_selected_language(self) -> None:
         config = self._valid_config()
         config.ui_language = "en"

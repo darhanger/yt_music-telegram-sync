@@ -121,6 +121,70 @@ class TelegramManagerTests(unittest.TestCase):
         self.assertIsInstance(state["status"], types.EmojiStatusEmpty)
         self.assertEqual(requests, [])
 
+    def test_personal_channel_restores_previous_channel(self) -> None:
+        client, state, updates = self._personal_channel_client(channel_id=111)
+        with TemporaryDirectory() as directory:
+            with patch(
+                "yt_music_telegram_sync.telegram.TelegramClient",
+                return_value=client,
+            ):
+                manager = TelegramManager(Path(directory) / "telegram", 1, "hash")
+                self.assertTrue(manager.activate_personal_channel(222))
+                manager.restore_personal_channel()
+                manager.close()
+
+        self.assertEqual(updates, [222, 111])
+        self.assertEqual(state["channel_id"], 111)
+
+    def test_manual_personal_channel_change_is_not_overwritten(self) -> None:
+        client, state, updates = self._personal_channel_client(channel_id=111)
+        with TemporaryDirectory() as directory:
+            with patch(
+                "yt_music_telegram_sync.telegram.TelegramClient",
+                return_value=client,
+            ):
+                manager = TelegramManager(Path(directory) / "telegram", 1, "hash")
+                manager.activate_personal_channel(222)
+                state["channel_id"] = 333
+                manager.restore_personal_channel()
+                manager.close()
+
+        self.assertEqual(updates, [222])
+        self.assertEqual(state["channel_id"], 333)
+
+    def test_channel_message_operations_use_selected_channel(self) -> None:
+        client, _state, _updates = self._personal_channel_client(channel_id=111)
+        document = object()
+        message = SimpleNamespace(id=8, media=SimpleNamespace(document=document))
+        client.send_file = AsyncMock(return_value=message)
+        client.get_messages = AsyncMock(return_value=[message])
+        client.delete_messages = AsyncMock()
+        with TemporaryDirectory() as directory:
+            audio_path = Path(directory) / "track.mp3"
+            audio_path.write_bytes(b"not-an-mp3")
+            with patch(
+                "yt_music_telegram_sync.telegram.TelegramClient",
+                return_value=client,
+            ):
+                manager = TelegramManager(Path(directory) / "telegram", 1, "hash")
+                manager.send_track(
+                    audio_path,
+                    Track("Title", "Artist"),
+                    personal_channel_id=222,
+                )
+                manager.send_document(document, personal_channel_id=222)
+                manager.get_documents([8], personal_channel_id=222)
+                manager.delete_message(8, personal_channel_id=222)
+                manager.close()
+
+        sent_peer = client.send_file.await_args.args[0]
+        fetched_peer = client.get_messages.await_args.args[0]
+        deleted_peer = client.delete_messages.await_args.args[0]
+        self.assertEqual(sent_peer.id, 222)
+        self.assertEqual(client.send_file.await_count, 2)
+        self.assertEqual(fetched_peer.id, 222)
+        self.assertEqual(deleted_peer.id, 222)
+
     @staticmethod
     def _emoji_client(*, premium: bool, status):
         state = {"status": status}
@@ -144,6 +208,51 @@ class TelegramManagerTests(unittest.TestCase):
         client.is_connected.return_value = True
         client.disconnect = Mock(return_value=None)
         return client, state, requests
+
+    @staticmethod
+    def _personal_channel_client(*, channel_id: int):
+        state = {"channel_id": channel_id}
+        updates: list[int] = []
+        channels = [
+            types.Channel(
+                id=value,
+                title=f"Channel {value}",
+                photo=types.ChatPhotoEmpty(),
+                date=None,
+                broadcast=True,
+                access_hash=value * 10,
+            )
+            for value in (111, 222, 333)
+        ]
+        client = Mock()
+
+        async def handle_request(request):
+            if isinstance(request, functions.users.GetFullUserRequest):
+                return SimpleNamespace(
+                    full_user=SimpleNamespace(
+                        personal_channel_id=state["channel_id"]
+                    )
+                )
+            if isinstance(
+                request, functions.channels.GetAdminedPublicChannelsRequest
+            ):
+                return SimpleNamespace(chats=channels)
+            if isinstance(request, functions.account.UpdatePersonalChannelRequest):
+                selected = request.channel
+                new_id = (
+                    0
+                    if isinstance(selected, types.InputChannelEmpty)
+                    else selected.channel_id
+                )
+                updates.append(new_id)
+                state["channel_id"] = new_id
+                return True
+            raise AssertionError(type(request))
+
+        client.side_effect = handle_request
+        client.is_connected.return_value = True
+        client.disconnect = Mock(return_value=None)
+        return client, state, updates
 
 
 class TelegramEmojiStatusTests(unittest.TestCase):

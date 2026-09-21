@@ -7,8 +7,9 @@ import webbrowser
 from collections.abc import Callable
 from pathlib import Path
 from tkinter import messagebox, simpledialog, ttk
+from typing import Any
 
-from telethon import TelegramClient, functions, types
+from telethon import TelegramClient, functions, types, utils
 from telethon.errors import (
     ApiIdInvalidError,
     PhoneCodeExpiredError,
@@ -44,8 +45,8 @@ class SetupWizard:
         else:
             config = load_partial(default_draft_config_path())
         self.root = tk.Tk()
-        self.root.geometry("780x740")
-        self.root.minsize(720, 660)
+        self.root.geometry("800x800")
+        self.root.minsize(740, 720)
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
         self.root.option_add("*tearOff", False)
@@ -77,6 +78,19 @@ class SetupWizard:
         self.audio_mode = tk.StringVar(value=config.audio_mode)
         self.download_workers = tk.StringVar(value=str(config.download_workers))
         self.remove_when_idle = tk.BooleanVar(value=config.remove_when_idle)
+        self.telegram_output_mode = tk.StringVar(
+            value=config.telegram_output_mode
+        )
+        self.telegram_personal_channel_id = tk.StringVar(
+            value=(
+                str(config.telegram_personal_channel_id)
+                if config.telegram_personal_channel_id
+                else ""
+            )
+        )
+        self.telegram_playing_emoji_enabled = tk.BooleanVar(
+            value=config.telegram_playing_emoji_enabled
+        )
         self.telegram_playing_emoji_id = tk.StringVar(
             value=(
                 str(config.telegram_playing_emoji_id)
@@ -300,7 +314,9 @@ class SetupWizard:
         behavior.pack(fill=tk.X)
         self._entry(behavior, 0, self._t("behavior.poll"), self.poll_interval)
         self._entry(behavior, 1, self._t("behavior.absent"), self.absent_confirmations)
-        self._entry(behavior, 2, self._t("behavior.cache"), self.cache_size)
+        self._cache_size_entry = self._entry(
+            behavior, 2, self._t("behavior.cache"), self.cache_size
+        )
         ttk.Label(
             behavior,
             text=self._t("behavior.audio_mode"),
@@ -318,33 +334,90 @@ class SetupWizard:
         mode.grid(row=3, column=1, sticky="ew", pady=4)
         ttk.Label(
             behavior,
-            text=self._t("behavior.emoji"),
+            text=self._t("behavior.output_mode"),
             style="Card.TLabel",
-        ).grid(
-            row=4, column=0, sticky="w", padx=(0, 12), pady=4
+        ).grid(row=4, column=0, sticky="w", padx=(0, 12), pady=4)
+        output_mode = ttk.Frame(behavior, style="Card.TFrame")
+        output_mode.grid(row=4, column=1, columnspan=2, sticky="w", pady=4)
+        ttk.Radiobutton(
+            output_mode,
+            text=self._t("behavior.output_profile"),
+            variable=self.telegram_output_mode,
+            value="profile_music",
+            command=self._update_output_controls,
+        ).pack(side=tk.LEFT)
+        ttk.Radiobutton(
+            output_mode,
+            text=self._t("behavior.output_channel"),
+            variable=self.telegram_output_mode,
+            value="personal_channel",
+            command=self._update_output_controls,
+        ).pack(side=tk.LEFT, padx=(12, 0))
+        ttk.Radiobutton(
+            output_mode,
+            text=self._t("behavior.output_both"),
+            variable=self.telegram_output_mode,
+            value="profile_and_channel",
+            command=self._update_output_controls,
+        ).pack(side=tk.LEFT, padx=(12, 0))
+        ttk.Label(
+            behavior,
+            text=self._t("behavior.channel"),
+            style="Card.TLabel",
+        ).grid(row=5, column=0, sticky="w", padx=(0, 12), pady=4)
+        self._personal_channel_entry = ttk.Entry(
+            behavior,
+            textvariable=self.telegram_personal_channel_id,
+            width=28,
         )
-        ttk.Entry(
+        self._personal_channel_entry.grid(row=5, column=1, sticky="ew", pady=4)
+        self._personal_channel_button = ttk.Button(
+            behavior,
+            text=self._t("behavior.select"),
+            command=self._select_personal_channel,
+        )
+        self._personal_channel_button.grid(
+            row=5, column=2, sticky="e", padx=(8, 0), pady=4
+        )
+        ttk.Checkbutton(
+            behavior,
+            text=self._t("behavior.emoji"),
+            variable=self.telegram_playing_emoji_enabled,
+            command=self._update_emoji_controls,
+            style="Card.TCheckbutton",
+        ).grid(
+            row=6, column=0, sticky="w", padx=(0, 12), pady=4
+        )
+        self._playing_emoji_entry = ttk.Entry(
             behavior,
             textvariable=self.telegram_playing_emoji_id,
             width=28,
-        ).grid(row=4, column=1, sticky="ew", pady=4)
-        ttk.Button(
+        )
+        self._playing_emoji_entry.grid(row=6, column=1, sticky="ew", pady=4)
+        self._playing_emoji_button = ttk.Button(
             behavior,
             text=self._t("behavior.select"),
             command=self._select_playing_emoji,
-        ).grid(row=4, column=2, sticky="e", padx=(8, 0), pady=4)
+        )
+        self._playing_emoji_button.grid(
+            row=6, column=2, sticky="e", padx=(8, 0), pady=4
+        )
         self._entry(
             behavior,
-            5,
+            7,
             self._t("behavior.workers"),
             self.download_workers,
         )
-        ttk.Checkbutton(
+        self._remove_when_idle_checkbox = ttk.Checkbutton(
             behavior,
             text=self._t("behavior.remove_idle"),
             variable=self.remove_when_idle,
             style="Card.TCheckbutton",
-        ).grid(row=6, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        )
+        self._remove_when_idle_checkbox.grid(
+            row=8, column=0, columnspan=3, sticky="w", pady=(6, 0)
+        )
+        self._update_output_controls()
 
         notifications = ttk.LabelFrame(
             synchronization,
@@ -484,6 +557,25 @@ class SetupWizard:
         self._telegram_api_hash_entry.configure(show=show)
         self._telegram_phone_entry.configure(show=show)
 
+    def _update_output_controls(self, _event: tk.Event[tk.Misc] | None = None) -> None:
+        output_mode = self.telegram_output_mode.get()
+        channel_mode = output_mode in {"personal_channel", "profile_and_channel"}
+        profile_mode = output_mode in {"profile_music", "profile_and_channel"}
+        channel_state = "normal" if channel_mode else "disabled"
+        profile_state = "normal" if profile_mode else "disabled"
+        self._personal_channel_entry.configure(state=channel_state)
+        self._personal_channel_button.configure(state=channel_state)
+        self._cache_size_entry.configure(state=profile_state)
+        self._remove_when_idle_checkbox.configure(state=profile_state)
+        self._update_emoji_controls()
+
+    def _update_emoji_controls(self) -> None:
+        state = (
+            "normal" if self.telegram_playing_emoji_enabled.get() else "disabled"
+        )
+        self._playing_emoji_entry.configure(state=state)
+        self._playing_emoji_button.configure(state=state)
+
     @staticmethod
     def _entry(
         parent: ttk.LabelFrame | ttk.Frame,
@@ -517,6 +609,13 @@ class SetupWizard:
                 audio_mode=self.audio_mode.get(),
                 download_workers=int(self.download_workers.get().strip()),
                 remove_when_idle=self.remove_when_idle.get(),
+                telegram_output_mode=self.telegram_output_mode.get(),
+                telegram_personal_channel_id=int(
+                    self.telegram_personal_channel_id.get().strip() or "0"
+                ),
+                telegram_playing_emoji_enabled=(
+                    self.telegram_playing_emoji_enabled.get()
+                ),
                 telegram_playing_emoji_id=int(
                     self.telegram_playing_emoji_id.get().strip() or "0"
                 ),
@@ -713,6 +812,44 @@ class SetupWizard:
             parent=self.root,
         )
 
+    def _select_personal_channel(self) -> None:
+        try:
+            api_id, api_hash = self._telegram_api_credentials()
+            self.status.set(self._t("channel.selecting"))
+            self.root.update_idletasks()
+            selected = _run_async(
+                _telegram_capture_personal_channel(
+                    self.session_path,
+                    api_id,
+                    api_hash,
+                    self._prompt_personal_channel_selection,
+                    language=self.ui_language.get(),
+                )
+            )
+        except (ConfigurationError, TelegramError) as exc:
+            messagebox.showerror(self._t("channel.dialog_title"), str(exc))
+            self.status.set(self._t("channel.error", error=exc))
+            return
+        except Exception as exc:  # noqa: BLE001 - GUI boundary reports library errors
+            messagebox.showerror(self._t("channel.dialog_title"), str(exc))
+            self.status.set(self._t("channel.error", error=exc))
+            return
+
+        if selected is None:
+            self.status.set(self._t("channel.cancelled"))
+            return
+        channel_id, title = selected
+        self.telegram_personal_channel_id.set(str(channel_id))
+        self.status.set(self._t("channel.selected", title=title))
+        self._save_draft()
+
+    def _prompt_personal_channel_selection(self) -> bool:
+        return messagebox.askokcancel(
+            self._t("channel.dialog_title"),
+            self._t("channel.dialog"),
+            parent=self.root,
+        )
+
     def _save(self) -> None:
         self.status.set(self._t("setup.saving"))
         self.root.update_idletasks()
@@ -733,13 +870,20 @@ class SetupWizard:
             return False
         log.info(
             "Настройки сохранены: audio_mode=%s, cache_size=%d, "
-            "download_workers=%d, remove_when_idle=%s, emoji_status=%s, "
+            "download_workers=%d, remove_when_idle=%s, output_mode=%s, "
+            "personal_channel=%s, emoji_status=%s, "
             "notifications=%s, notification_sound=%s, ui_language=%s",
             config.audio_mode,
             config.cache_size,
             config.download_workers,
             config.remove_when_idle,
-            bool(config.telegram_playing_emoji_id),
+            config.telegram_output_mode,
+            config.telegram_personal_channel_id or None,
+            (
+                config.telegram_playing_emoji_id
+                if config.telegram_playing_emoji_enabled
+                else None
+            ),
             config.notifications_enabled,
             config.notification_sound_enabled,
             config.ui_language,
@@ -886,3 +1030,78 @@ async def _telegram_capture_playing_emoji(
                     )
         finally:
             await client.disconnect()
+
+
+async def _telegram_capture_personal_channel(
+    session_path: Path,
+    api_id: int,
+    api_hash: str,
+    selection_prompt: Callable[[], bool],
+    *,
+    language: str = "ru",
+) -> tuple[int, str] | None:
+    client = TelegramClient(str(session_path), api_id, api_hash)
+    original_channel = None
+    try:
+        await client.connect()
+        if not await client.is_user_authorized():
+            raise ConfigurationError(
+                translate("channel.telegram_unauthorized", language)
+            )
+        original_result = await client(functions.users.GetFullUserRequest("me"))
+        original_full_user = getattr(original_result, "full_user", None)
+        if original_full_user is None:
+            raise ConfigurationError(translate("channel.no_user", language))
+        original_id = int(
+            getattr(original_full_user, "personal_channel_id", 0) or 0
+        )
+        original_channel = types.InputChannelEmpty()
+        if original_id:
+            original_channels = await _telegram_personal_channels(client)
+            original_entity = original_channels.get(original_id)
+            if original_entity is None:
+                raise ConfigurationError(
+                    translate("channel.original_unavailable", language)
+                )
+            original_channel = utils.get_input_channel(original_entity)
+
+        if not selection_prompt():
+            return None
+
+        selected_result = await client(functions.users.GetFullUserRequest("me"))
+        selected_full_user = getattr(selected_result, "full_user", None)
+        if selected_full_user is None:
+            raise ConfigurationError(translate("channel.no_user", language))
+        selected_id = int(
+            getattr(selected_full_user, "personal_channel_id", 0) or 0
+        )
+        if not selected_id:
+            raise ConfigurationError(translate("channel.not_selected", language))
+        selected_channels = await _telegram_personal_channels(client)
+        selected_channel = selected_channels.get(selected_id)
+        if selected_channel is None:
+            raise ConfigurationError(translate("channel.unavailable", language))
+        return selected_id, str(getattr(selected_channel, "title", selected_id))
+    finally:
+        try:
+            if original_channel is not None:
+                restored = await client(
+                    functions.account.UpdatePersonalChannelRequest(original_channel)
+                )
+                if restored is False:
+                    raise TelegramError(
+                        translate("channel.restore_rejected", language)
+                    )
+        finally:
+            await client.disconnect()
+
+
+async def _telegram_personal_channels(client: TelegramClient) -> dict[int, Any]:
+    result = await client(
+        functions.channels.GetAdminedPublicChannelsRequest(for_personal=True)
+    )
+    return {
+        int(channel.id): channel
+        for channel in getattr(result, "chats", [])
+        if isinstance(channel, types.Channel)
+    }

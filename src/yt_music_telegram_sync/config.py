@@ -57,6 +57,9 @@ class AppConfig:
     audio_mode: str = "placeholder"
     download_workers: int = 2
     remove_when_idle: bool = True
+    telegram_output_mode: str = "profile_music"
+    telegram_personal_channel_id: int = 0
+    telegram_playing_emoji_enabled: bool = False
     telegram_playing_emoji_id: int = 0
     notifications_enabled: bool = True
     notification_sound_enabled: bool = True
@@ -89,8 +92,23 @@ class AppConfig:
             raise ConfigurationError(translate("config.audio_mode", language))
         if not 1 <= self.download_workers <= 4:
             raise ConfigurationError(translate("config.workers_range", language))
+        if self.telegram_output_mode not in {
+            "profile_music",
+            "personal_channel",
+            "profile_and_channel",
+        }:
+            raise ConfigurationError(translate("config.output_mode", language))
+        if not 0 <= self.telegram_personal_channel_id <= (1 << 63) - 1:
+            raise ConfigurationError(translate("config.channel_id", language))
+        if (
+            self.telegram_output_mode in {"personal_channel", "profile_and_channel"}
+            and self.telegram_personal_channel_id == 0
+        ):
+            raise ConfigurationError(translate("config.channel_required", language))
         if not 0 <= self.telegram_playing_emoji_id <= (1 << 63) - 1:
             raise ConfigurationError(translate("config.emoji_id", language))
+        if self.telegram_playing_emoji_enabled and self.telegram_playing_emoji_id == 0:
+            raise ConfigurationError(translate("config.emoji_required", language))
 
     @classmethod
     def load(cls, path: Path | None = None) -> AppConfig:
@@ -108,6 +126,7 @@ class AppConfig:
 
         allowed = {field.name for field in fields(cls)}
         values = {key: value for key, value in raw.items() if key in allowed}
+        _migrate_emoji_enabled(raw, values)
         try:
             config = cls(**values)
         except TypeError as exc:
@@ -146,7 +165,15 @@ def load_partial(path: Path | None = None) -> AppConfig:
         return AppConfig()
     allowed = {field.name for field in fields(AppConfig)}
     values = {key: value for key, value in raw.items() if key in allowed}
+    _migrate_emoji_enabled(raw, values)
     try:
         return AppConfig(**values)
     except TypeError:
         return AppConfig()
+
+
+def _migrate_emoji_enabled(raw: dict[str, Any], values: dict[str, Any]) -> None:
+    if "telegram_playing_emoji_enabled" not in raw:
+        values["telegram_playing_emoji_enabled"] = bool(
+            raw.get("telegram_playing_emoji_id", 0)
+        )

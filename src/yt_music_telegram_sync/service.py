@@ -141,7 +141,31 @@ class SyncApplicationService:
                 ),
             )
             state = StateStore()
-            initial_entries = self._restore_entries(state, telegram)
+            channel_enabled = self.config.telegram_output_mode in {
+                "personal_channel",
+                "profile_and_channel",
+            }
+            profile_music_enabled = (
+                self.config.telegram_output_mode != "personal_channel"
+            )
+            personal_channel_id = (
+                self.config.telegram_personal_channel_id
+                if channel_enabled
+                else 0
+            )
+            if channel_enabled and profile_music_enabled:
+                destination = f"profile_and_channel:{personal_channel_id}"
+            elif channel_enabled:
+                destination = f"personal_channel:{personal_channel_id}"
+            else:
+                destination = "profile_music"
+            initial_entries = self._restore_entries(
+                state,
+                telegram,
+                destination=destination,
+                personal_channel_id=personal_channel_id,
+                profile_music_enabled=profile_music_enabled,
+            )
             placeholder = PlaceholderBackend(artwork)
             downloader = YtDlpBackend(artwork)
             immediate = downloader if self.config.audio_mode == "audio" else placeholder
@@ -155,9 +179,23 @@ class SyncApplicationService:
                 download_workers=self.config.download_workers,
                 initial_entries=initial_entries,
                 cache_changed=lambda entries: state.save(
-                    StoredTrack(entry.track, entry.message_id) for entry in entries
+                    (
+                        StoredTrack(
+                            entry.track,
+                            entry.message_id,
+                            entry.channel_message_id,
+                        )
+                        for entry in entries
+                    ),
+                    destination=destination,
                 ),
-                playing_emoji_id=self.config.telegram_playing_emoji_id,
+                playing_emoji_id=(
+                    self.config.telegram_playing_emoji_id
+                    if self.config.telegram_playing_emoji_enabled
+                    else 0
+                ),
+                personal_channel_id=personal_channel_id,
+                profile_music_enabled=profile_music_enabled,
                 language=self._language,
             )
             self._poll_loop(lastfm, sync)
@@ -177,16 +215,63 @@ class SyncApplicationService:
                 )
 
     def _restore_entries(
-        self, state: StateStore, telegram: TelegramManager
+        self,
+        state: StateStore,
+        telegram: TelegramManager,
+        *,
+        destination: str = "profile_music",
+        personal_channel_id: int = 0,
+        profile_music_enabled: bool = True,
     ) -> list[CachedTrack]:
-        stored = state.load()
-        documents = telegram.get_documents([entry.message_id for entry in stored])
+        stored = state.load(destination=destination)
+        channel_documents: dict[int, object] = {}
+        if profile_music_enabled:
+            documents = telegram.get_documents(
+                [entry.message_id for entry in stored]
+            )
+            channel_message_ids = [
+                entry.channel_message_id
+                for entry in stored
+                if entry.channel_message_id is not None
+            ]
+            channel_documents = (
+                telegram.get_documents(
+                    channel_message_ids,
+                    personal_channel_id=personal_channel_id,
+                )
+                if personal_channel_id and channel_message_ids
+                else {}
+            )
+        else:
+            documents = telegram.get_documents(
+                [entry.message_id for entry in stored],
+                personal_channel_id=personal_channel_id,
+            )
         restored = [
-            CachedTrack(entry.track, entry.message_id, documents[entry.message_id])
+            CachedTrack(
+                entry.track,
+                entry.message_id,
+                documents[entry.message_id],
+                channel_message_id=(
+                    entry.channel_message_id
+                    if entry.channel_message_id in channel_documents
+                    else None
+                ),
+            )
             for entry in stored
             if entry.message_id in documents
-        ][-self.config.cache_size :]
-        state.save(StoredTrack(entry.track, entry.message_id) for entry in restored)
+        ][-(self.config.cache_size if profile_music_enabled else 1) :]
+        state.save(
+            (
+                StoredTrack(
+                    entry.track,
+                    entry.message_id,
+                    entry.channel_message_id,
+                )
+                for entry in restored
+            ),
+            destination=destination,
+        )
         if restored:
             log.info("Восстановлено треков из предыдущего запуска: %d", len(restored))
         return restored
@@ -214,7 +299,11 @@ class SyncApplicationService:
                         if self.status.kind != "idle":
                             key = (
                                 "service.idle_cleaned"
-                                if self.config.remove_when_idle
+                                if (
+                                    self.config.remove_when_idle
+                                    or self.config.telegram_output_mode
+                                    in {"personal_channel", "profile_and_channel"}
+                                )
                                 else "service.idle"
                             )
                             message = translate(key, self._language)
@@ -223,7 +312,7 @@ class SyncApplicationService:
                 else:
                     absent_count = 0
                     sync.handle_scrobbling_active()
-                    if track.identity != last_identity:
+                    if track.identity != last_identity or sync.active_track is None:
                         sync.handle_track(track)
                         last_identity = track.identity
                     if self.status.kind != "running" or self.status.track != track:
@@ -271,7 +360,7 @@ class SyncApplicationService:
                         translate("service.clear_error", self._language, error=exc),
                     )
             elif command == "pause":
-                sync.handle_scrobbling_inactive()
+                sync.handle_pause()
 
     def _wait(self, timeout: float) -> None:
         self._wake_event.wait(timeout)

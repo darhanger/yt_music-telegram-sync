@@ -12,20 +12,21 @@ from .config import default_state_path
 from .models import Track
 
 log = logging.getLogger(__name__)
-_STATE_VERSION = 1
+_STATE_VERSION = 2
 
 
 @dataclass(frozen=True, slots=True)
 class StoredTrack:
     track: Track
     message_id: int
+    channel_message_id: int | None = None
 
 
 class StateStore:
     def __init__(self, path: Path | None = None) -> None:
         self.path = path or default_state_path()
 
-    def load(self) -> list[StoredTrack]:
+    def load(self, destination: str = "profile_music") -> list[StoredTrack]:
         try:
             payload = json.loads(self.path.read_text(encoding="utf-8"))
         except FileNotFoundError:
@@ -33,10 +34,19 @@ class StateStore:
         except (OSError, json.JSONDecodeError) as exc:
             log.warning("Не удалось прочитать состояние: %s", exc)
             return []
-        if not isinstance(payload, dict) or payload.get("version") != _STATE_VERSION:
+        if not isinstance(payload, dict) or payload.get("version") not in {1, 2}:
             log.warning("Файл состояния имеет неизвестный формат")
             return []
-        raw_entries = payload.get("tracks")
+        if payload.get("version") == 1:
+            stored_destination = payload.get("destination", "profile_music")
+            raw_entries = payload.get("tracks") if stored_destination == destination else []
+        else:
+            destinations = payload.get("destinations")
+            raw_entries = (
+                destinations.get(destination, [])
+                if isinstance(destinations, dict)
+                else []
+            )
         if not isinstance(raw_entries, list):
             return []
 
@@ -57,20 +67,60 @@ class StateStore:
                     mbid=str(raw_track.get("mbid", "")),
                 )
                 message_id = int(raw_entry["message_id"])
+                raw_channel_message_id = raw_entry.get("channel_message_id")
+                channel_message_id = (
+                    int(raw_channel_message_id)
+                    if raw_channel_message_id is not None
+                    else None
+                )
                 if not track.title or not track.artist or message_id <= 0:
                     continue
-                entries.append(StoredTrack(track=track, message_id=message_id))
+                if channel_message_id is not None and channel_message_id <= 0:
+                    channel_message_id = None
+                entries.append(
+                    StoredTrack(
+                        track=track,
+                        message_id=message_id,
+                        channel_message_id=channel_message_id,
+                    )
+                )
             except (KeyError, TypeError, ValueError):
                 continue
         return entries
 
-    def save(self, entries: Iterable[StoredTrack]) -> None:
+    def save(
+        self,
+        entries: Iterable[StoredTrack],
+        destination: str = "profile_music",
+    ) -> None:
+        destinations: dict[str, object] = {}
+        try:
+            existing = json.loads(self.path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, OSError, json.JSONDecodeError):
+            existing = None
+        if isinstance(existing, dict):
+            if existing.get("version") == _STATE_VERSION and isinstance(
+                existing.get("destinations"), dict
+            ):
+                destinations.update(existing["destinations"])
+            elif existing.get("version") == 1 and isinstance(
+                existing.get("tracks"), list
+            ):
+                legacy_destination = str(
+                    existing.get("destination", "profile_music")
+                )
+                destinations[legacy_destination] = existing["tracks"]
+        destinations[destination] = [
+            {
+                "track": asdict(entry.track),
+                "message_id": entry.message_id,
+                "channel_message_id": entry.channel_message_id,
+            }
+            for entry in entries
+        ]
         payload = {
             "version": _STATE_VERSION,
-            "tracks": [
-                {"track": asdict(entry.track), "message_id": entry.message_id}
-                for entry in entries
-            ],
+            "destinations": destinations,
         }
         self.path.parent.mkdir(parents=True, exist_ok=True)
         serialized = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"

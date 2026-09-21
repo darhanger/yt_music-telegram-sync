@@ -42,6 +42,11 @@ class TelegramManager:
         self._playing_emoji_id = 0
         self._previous_emoji_status: Any | None = None
         self._playing_emoji_active = False
+        self._playing_personal_channel_id = 0
+        self._previous_personal_channel_id = 0
+        self._previous_personal_channel: Any | None = None
+        self._playing_personal_channel_active = False
+        self._personal_channels: dict[int, Any] = {}
 
     def _run(self, operation: Awaitable[T]) -> T:
         if self._closed:
@@ -70,6 +75,12 @@ class TelegramManager:
                 except Exception:
                     log.exception(
                         "Не удалось восстановить Telegram emoji status при отключении"
+                    )
+                try:
+                    self.restore_personal_channel()
+                except Exception:
+                    log.exception(
+                        "Не удалось восстановить личный канал Telegram при отключении"
                     )
                 self._disconnect()
         finally:
@@ -141,7 +152,117 @@ class TelegramManager:
         self._previous_emoji_status = None
         self._playing_emoji_active = False
 
-    def send_track(self, path: Path, track: Track) -> Any:
+    def activate_personal_channel(self, channel_id: int) -> bool:
+        if channel_id <= 0:
+            return False
+        if self._playing_personal_channel_active:
+            return True
+
+        previous_id = self._current_personal_channel_id()
+        channel = self._get_personal_channel(channel_id)
+        previous_channel = (
+            utils.get_input_channel(self._get_personal_channel(previous_id))
+            if previous_id
+            else types.InputChannelEmpty()
+        )
+        request_class = getattr(functions.account, "UpdatePersonalChannelRequest", None)
+        if request_class is None:
+            raise TelegramError(
+                translate("telegram.telethon_channel_too_old", self._language)
+            )
+        if previous_id != channel_id:
+            result = self._run(
+                self._client(request_class(utils.get_input_channel(channel)))
+            )
+            if result is False:
+                raise TelegramError(
+                    translate("telegram.channel_set_rejected", self._language)
+                )
+
+        self._previous_personal_channel_id = previous_id
+        self._previous_personal_channel = previous_channel
+        self._playing_personal_channel_id = channel_id
+        self._playing_personal_channel_active = True
+        log.info("Личный канал Telegram для активного nowplaying установлен")
+        return True
+
+    def restore_personal_channel(self) -> None:
+        if not self._playing_personal_channel_active:
+            return
+
+        current_id = self._current_personal_channel_id()
+        if current_id != self._playing_personal_channel_id:
+            log.info(
+                "Личный канал был изменён вручную; автоматическое восстановление пропущено"
+            )
+            self._forget_personal_channel()
+            return
+
+        previous_channel = self._previous_personal_channel
+        if previous_channel is None:
+            raise TelegramError(
+                translate("telegram.channel_previous_missing", self._language)
+            )
+        request_class = getattr(functions.account, "UpdatePersonalChannelRequest", None)
+        if request_class is None:
+            raise TelegramError(
+                translate("telegram.telethon_channel_too_old", self._language)
+            )
+        if self._previous_personal_channel_id != self._playing_personal_channel_id:
+            result = self._run(self._client(request_class(previous_channel)))
+            if result is False:
+                raise TelegramError(
+                    translate("telegram.channel_restore_rejected", self._language)
+                )
+        self._forget_personal_channel()
+        log.info("Исходный личный канал Telegram восстановлен")
+
+    def _forget_personal_channel(self) -> None:
+        self._playing_personal_channel_id = 0
+        self._previous_personal_channel_id = 0
+        self._previous_personal_channel = None
+        self._playing_personal_channel_active = False
+
+    def _current_personal_channel_id(self) -> int:
+        result = self._run(
+            self._client(functions.users.GetFullUserRequest("me"))
+        )
+        full_user = getattr(result, "full_user", None)
+        if full_user is None:
+            raise TelegramError(translate("telegram.no_user", self._language))
+        return int(getattr(full_user, "personal_channel_id", 0) or 0)
+
+    def _get_personal_channel(self, channel_id: int) -> Any:
+        cached = self._personal_channels.get(channel_id)
+        if cached is not None:
+            return cached
+        request_class = getattr(
+            functions.channels, "GetAdminedPublicChannelsRequest", None
+        )
+        if request_class is None:
+            raise TelegramError(
+                translate("telegram.telethon_channel_too_old", self._language)
+            )
+        result = self._run(
+            self._client(request_class(for_personal=True))
+        )
+        self._personal_channels.update(
+            {
+                int(channel.id): channel
+                for channel in getattr(result, "chats", [])
+                if isinstance(channel, types.Channel)
+            }
+        )
+        try:
+            return self._personal_channels[channel_id]
+        except KeyError as exc:
+            raise TelegramError(
+                translate("telegram.channel_unavailable", self._language)
+            ) from exc
+
+    def send_track(
+        self, path: Path, track: Track, *, personal_channel_id: int = 0
+    ) -> Any:
         try:
             audio_info = MP3(path).info
             duration = max(0, round(audio_info.length)) if audio_info is not None else 0
@@ -158,7 +279,7 @@ class TelegramManager:
         ]
         message = self._run(
             self._client.send_file(
-                "me",
+                self._message_peer(personal_channel_id),
                 str(path),
                 attributes=attributes,
                 supports_streaming=True,
@@ -188,13 +309,36 @@ class TelegramManager:
             )
             raise TelegramError(translate(key, self._language))
 
-    def delete_message(self, message_id: int) -> None:
-        self._run(self._client.delete_messages("me", message_id))
+    def send_document(self, document: Any, *, personal_channel_id: int) -> Any:
+        message = self._run(
+            self._client.send_file(
+                self._message_peer(personal_channel_id),
+                document,
+                supports_streaming=True,
+            )
+        )
+        sent_document = getattr(getattr(message, "media", None), "document", None)
+        if sent_document is None:
+            raise TelegramError(translate("telegram.no_document", self._language))
+        return message, sent_document
 
-    def get_documents(self, message_ids: list[int]) -> dict[int, Any]:
+    def delete_message(self, message_id: int, *, personal_channel_id: int = 0) -> None:
+        self._run(
+            self._client.delete_messages(
+                self._message_peer(personal_channel_id), message_id
+            )
+        )
+
+    def get_documents(
+        self, message_ids: list[int], *, personal_channel_id: int = 0
+    ) -> dict[int, Any]:
         if not message_ids:
             return {}
-        messages = self._run(self._client.get_messages("me", ids=message_ids))
+        messages = self._run(
+            self._client.get_messages(
+                self._message_peer(personal_channel_id), ids=message_ids
+            )
+        )
         if not isinstance(messages, list):
             messages = [messages]
         documents: dict[int, Any] = {}
@@ -205,6 +349,11 @@ class TelegramManager:
             if document is not None:
                 documents[message.id] = document
         return documents
+
+    def _message_peer(self, personal_channel_id: int) -> Any:
+        if personal_channel_id <= 0:
+            return "me"
+        return self._get_personal_channel(personal_channel_id)
 
 
 def _track_filename(track: Track) -> str:
