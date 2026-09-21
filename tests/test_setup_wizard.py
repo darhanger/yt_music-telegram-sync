@@ -225,6 +225,13 @@ class SetupPersistenceTests(unittest.TestCase):
         wizard._cache_size_entry.configure.assert_called_with(state="normal")
         wizard._playing_emoji_entry.configure.assert_called_with(state="disabled")
 
+        wizard.telegram_output_mode.get.return_value = "personal_channel"
+        wizard._update_output_controls()
+        wizard._cache_size_entry.configure.assert_called_with(state="normal")
+        wizard._remove_when_idle_checkbox.configure.assert_called_with(
+            state="disabled"
+        )
+
         wizard.telegram_playing_emoji_enabled.get.return_value = True
         wizard._update_emoji_controls()
         wizard._playing_emoji_entry.configure.assert_called_with(state="normal")

@@ -33,7 +33,7 @@ flowchart LR
     LF --> APP[YT Music<br>Telegram Sync]
     APP --> SM[Saved Messages]
     SM --> TG[Telegram<br>Music on Profile]
-    APP --> CH[Public channel<br>current track]
+    APP --> CH[Public channel<br>track history]
 ```
 
 The application:
@@ -45,7 +45,7 @@ The application:
 - maintains a bounded LRU cache and restores it after a restart;
 - removes tracks added during the listening session after playback stops;
 - can set a Telegram Premium emoji status while `nowplaying` is active and restore the previous one;
-- can temporarily assign a selected public channel to the profile, publish only the current track there, and restore the previous personal channel;
+- can temporarily assign a selected public channel to the profile, keep a bounded track history there, and restore the previous personal channel;
 - provides Russian and English localization for the setup window and system tray;
 - lets you disable tray notifications or keep them visible without sound;
 - supports pause, manual synchronization, and cleanup from the tray menu;
@@ -130,7 +130,7 @@ The tray menu lets you:
 - pause or resume synchronization;
 - request an immediate Last.fm check;
 - remove profile music created by the application;
-- remove the application's current channel post;
+- remove the application's channel posts;
 - edit settings;
 - open the log or application data directory;
 - restart or exit the application.
@@ -156,9 +156,9 @@ Press `Ctrl+C` to stop it.
 | Language | Switches the setup window immediately; after saving, the tray menu and notifications use the same language |
 | Last.fm polling | Request interval; 5–10 seconds is recommended, 3 is the minimum |
 | Checks before idle | Number of empty responses required to confirm playback has stopped; 3 is recommended |
-| Profile tracks | Maximum LRU cache size |
+| Tracks in history | Maximum LRU history size for the selected destination(s) |
 | Parallel downloads | Number of background download workers used by `mixed` mode |
-| Music destination | `Profile` saves tracks to Music on Profile; `Personal channel` publishes only the current track to the channel; `Profile + channel` does both without downloading twice |
+| Music destination | `Profile` saves the history to Music on Profile; `Personal channel` publishes it to the channel; `Profile + channel` does both without downloading twice |
 | Now playing channel | ID of a public broadcast channel; **Select…** reads it from the Telegram profile settings |
 | Emoji status while nowplaying | The checkbox enables automatic status changes; the selected custom emoji ID is retained while disabled |
 | Remove music when idle | Removes all tracked session entries from the profile after a confirmed stop |
@@ -169,9 +169,9 @@ Last.fm does not expose a dedicated `stop` event. Cleanup therefore happens afte
 
 The **Emoji status while nowplaying** checkbox explicitly enables or disables the feature without deleting the selected ID. The **Select…** button verifies Telegram Premium, remembers the current status, and asks you to set the desired ordinary emoji status in Telegram. After reading its ID, the wizard immediately restores the original status. During synchronization, the selected emoji is set for active `nowplaying` and the previous status is restored after confirmed idle, pause, or a normal application exit. If you manually change the status while listening, that change is preserved.
 
-In **Personal channel** mode, the wizard similarly asks you to temporarily choose a channel through **Telegram → Edit Profile → Personal Channel**, reads its ID, and restores the original channel. During `nowplaying`, the application assigns the selected channel to the profile and keeps one current audio post there, deleting the previous post when the track changes. On confirmed idle, pause, or normal exit, the post is deleted and the previous personal channel is restored. Music is not added to Music on Profile and Saved Messages is not used. Emoji status can be enabled independently in this mode too. Manual personal-channel and emoji-status changes made while listening are preserved.
+In **Personal channel** mode, the wizard similarly asks you to temporarily choose a channel through **Telegram → Edit Profile → Personal Channel**, reads its ID, and restores the original channel. During `nowplaying`, the application assigns the selected channel to the profile and keeps up to **Tracks in history** audio posts there (20 by default). When the limit is reached, the least recently played track is removed; replaying a retained track moves its post to the end without downloading it again. On confirmed idle, pause, or normal exit, all of these posts are deleted and the previous personal channel is restored. Music is not added to Music on Profile and Saved Messages is not used. Emoji status can be enabled independently in this mode too. Manual personal-channel and emoji-status changes made while listening are preserved.
 
-**Profile + channel** mode uses one prepared audio file for both destinations: tracks are retained in Music on Profile according to the LRU cache, while the channel keeps only the current post. On idle, the channel post is always deleted; profile music is removed only when **Remove profile music when now playing disappears** is enabled.
+**Profile + channel** mode uses one prepared audio file for both destinations: the same bounded LRU history is retained in Music on Profile and the channel. On idle, all channel posts are always deleted; profile music is removed only when **Remove profile music when now playing disappears** is enabled.
 
 ## Data and security
 
@@ -250,7 +250,7 @@ The previous emoji status is kept in memory so that a manual status change from 
 <details>
 <summary><strong>The music personal channel remains after a crash</strong></summary>
 
-Like the emoji status, the previous personal channel is kept only in memory to avoid overwriting a manual change from another Telegram client. After a forced termination, restore the channel manually in your profile settings. The remaining audio post is removed after the next confirmed idle if the application is restarted in the same channel mode.
+Like the emoji status, the previous personal channel is kept only in memory to avoid overwriting a manual change from another Telegram client. After a forced termination, restore the channel manually in your profile settings. Remaining audio posts are removed after the next confirmed idle if the application is restarted in the same channel mode.
 </details>
 
 ## Development

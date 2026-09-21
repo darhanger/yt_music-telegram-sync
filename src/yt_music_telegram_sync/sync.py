@@ -55,7 +55,7 @@ class TrackSyncService:
         self._personal_channel_id = personal_channel_id
         self._profile_music_enabled = profile_music_enabled
         self._channel_enabled = personal_channel_id > 0
-        self._cache_size = cache_size if profile_music_enabled else 1
+        self._cache_size = cache_size
         self._cache: OrderedDict[tuple[str, ...], CachedTrack] = OrderedDict()
         self._active_identity: tuple[str, ...] | None = None
         self._replacement_queue: dict[int, CachedTrack] = {}
@@ -91,26 +91,14 @@ class TrackSyncService:
             if self._profile_music_enabled:
                 self._telegram.save_music(entry.document, unsave=True)
                 self._telegram.save_music(entry.document, unsave=False)
-            if self._channel_enabled and self._profile_music_enabled:
-                self._publish_cached_to_channel(entry)
+            if self._channel_enabled:
+                self._repost_cached_to_channel(entry)
             self._notify_cache_changed()
             if self._profile_music_enabled:
                 log.info("Трек возвращён в начало профиля: %s", track.display_name)
             return
 
         entry = self._create_entry(track)
-        if self._channel_enabled and self._profile_music_enabled:
-            try:
-                self._clear_channel_posts()
-            except Exception:
-                try:
-                    self._remove_entry(entry)
-                except Exception:
-                    log.exception(
-                        "Не удалось откатить добавление трека: %s",
-                        track.display_name,
-                    )
-                raise
         if len(self._cache) >= self._cache_size:
             try:
                 self._evict_oldest()
@@ -508,23 +496,30 @@ class TrackSyncService:
         else:
             self._delete_channel_message(entry.message_id)
 
-    def _publish_cached_to_channel(self, entry: CachedTrack) -> None:
-        if entry.channel_message_id is not None:
-            self._clear_channel_posts(exclude=entry)
-            return
+    def _repost_cached_to_channel(self, entry: CachedTrack) -> None:
         message, _document = self._telegram.send_document(
             entry.document,
             personal_channel_id=self._personal_channel_id,
         )
+        previous_message_id = (
+            entry.channel_message_id
+            if self._profile_music_enabled
+            else entry.message_id
+        )
         try:
-            self._clear_channel_posts()
+            if previous_message_id is not None:
+                self._delete_channel_message(previous_message_id)
         except Exception:
             try:
                 self._delete_channel_message(message.id)
             except Exception:
                 log.exception("Не удалось откатить повторную публикацию в канале")
             raise
-        entry.channel_message_id = message.id
+        if self._profile_music_enabled:
+            entry.channel_message_id = message.id
+        else:
+            entry.message_id = message.id
+            entry.document = _document
 
     def _clear_channel_posts(self, *, exclude: CachedTrack | None = None) -> None:
         failed: list[CachedTrack] = []

@@ -565,7 +565,7 @@ class SetupWizard:
         profile_state = "normal" if profile_mode else "disabled"
         self._personal_channel_entry.configure(state=channel_state)
         self._personal_channel_button.configure(state=channel_state)
-        self._cache_size_entry.configure(state=profile_state)
+        self._cache_size_entry.configure(state="normal")
         self._remove_when_idle_checkbox.configure(state=profile_state)
         self._update_emoji_controls()
 

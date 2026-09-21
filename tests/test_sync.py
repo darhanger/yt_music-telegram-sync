@@ -204,7 +204,7 @@ class TrackSyncTests(unittest.TestCase):
         self.assertEqual(telegram.activated_emojis, [777])
         self.assertEqual(telegram.emoji_restore_count, 1)
 
-    def test_personal_channel_keeps_only_current_post_and_restores_profile(self) -> None:
+    def test_personal_channel_keeps_history_and_restores_profile(self) -> None:
         telegram = FakeTelegram()
         backend = FakeBackend()
         service = TrackSyncService(
@@ -221,6 +221,7 @@ class TrackSyncTests(unittest.TestCase):
             service.handle_scrobbling_active()
             service.handle_track(Track("One", "Artist"))
             service.handle_track(Track("Two", "Artist"))
+            self.assertEqual(telegram.deleted_from_channels, [])
             service.handle_no_track(remove_when_idle=False)
         finally:
             service.close()
@@ -235,6 +236,60 @@ class TrackSyncTests(unittest.TestCase):
         self.assertEqual(telegram.saved, [])
         self.assertEqual(telegram.activated_emojis, [777])
         self.assertEqual(telegram.emoji_restore_count, 1)
+
+    def test_personal_channel_history_evicts_oldest_post_at_limit(self) -> None:
+        telegram = FakeTelegram()
+        backend = FakeBackend()
+        service = TrackSyncService(
+            telegram,  # type: ignore[arg-type]
+            backend,
+            backend,  # type: ignore[arg-type]
+            cache_size=2,
+            personal_channel_id=900,
+            profile_music_enabled=False,
+        )
+        try:
+            service.handle_track(Track("One", "Artist"))
+            service.handle_track(Track("Two", "Artist"))
+            self.assertEqual(telegram.deleted_from_channels, [])
+
+            service.handle_track(Track("Three", "Artist"))
+            self.assertEqual(telegram.deleted_from_channels, [(1, 900)])
+        finally:
+            service.close()
+
+        self.assertEqual(
+            telegram.deleted_from_channels,
+            [(1, 900), (2, 900), (3, 900)],
+        )
+
+    def test_repeated_channel_track_moves_to_end_without_redownload(self) -> None:
+        telegram = FakeTelegram()
+        backend = FakeBackend()
+        service = TrackSyncService(
+            telegram,  # type: ignore[arg-type]
+            backend,
+            backend,  # type: ignore[arg-type]
+            cache_size=2,
+            personal_channel_id=900,
+            profile_music_enabled=False,
+        )
+        try:
+            one = Track("One", "Artist")
+            service.handle_track(one)
+            service.handle_track(Track("Two", "Artist"))
+            service.handle_track(one)
+
+            self.assertEqual(telegram.sent_to_channels, [900, 900, 900])
+            self.assertEqual(telegram.deleted_from_channels, [(1, 900)])
+            self.assertEqual(telegram.next_id, 4)
+        finally:
+            service.close()
+
+        self.assertEqual(
+            telegram.deleted_from_channels,
+            [(1, 900), (2, 900), (3, 900)],
+        )
 
     def test_personal_channel_post_is_removed_on_close(self) -> None:
         telegram = FakeTelegram()
@@ -272,6 +327,7 @@ class TrackSyncTests(unittest.TestCase):
             one = Track("One", "Artist")
             service.handle_track(one)
             service.handle_track(Track("Two", "Artist"))
+            self.assertEqual(telegram.deleted_from_channels, [])
             service.handle_track(one)
             service.handle_no_track(remove_when_idle=False)
         finally:

@@ -260,7 +260,7 @@ class SyncApplicationService:
             )
             for entry in stored
             if entry.message_id in documents
-        ][-(self.config.cache_size if profile_music_enabled else 1) :]
+        ][-self.config.cache_size :]
         state.save(
             (
                 StoredTrack(
