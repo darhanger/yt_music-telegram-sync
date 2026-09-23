@@ -77,15 +77,19 @@ class SyncApplicationService:
             return
         self._stop_event.clear()
         self._thread = threading.Thread(
-            target=self._run, name="sync-service", daemon=True
+            target=self._run, name="sync-service", daemon=False
         )
         self._thread.start()
 
-    def stop(self, timeout: float = 15.0) -> None:
+    def stop(self, timeout: float = 15.0) -> bool:
         self._stop_event.set()
         self._wake_event.set()
         if self._thread is not None:
             self._thread.join(timeout=timeout)
+            if self._thread.is_alive():
+                log.warning("Сервис не завершился за %.1f с", timeout)
+                return False
+        return True
 
     def toggle_pause(self) -> bool:
         if self._paused.is_set():
@@ -117,11 +121,14 @@ class SyncApplicationService:
             translate("service.connecting", self._language),
         )
         artwork = ArtworkLoader()
+        state = StateStore()
         telegram = TelegramManager(
             self._session_path,
             self.config.telegram_api_id,
             self.config.telegram_api_hash,
             language=self._language,
+            restore_state=state.load_telegram_restore(),
+            restore_state_changed=state.save_telegram_restore,
         )
         lastfm = LastFmClient(
             self.config.lastfm_api_key,
@@ -131,6 +138,7 @@ class SyncApplicationService:
         sync: TrackSyncService | None = None
         try:
             telegram.connect()
+            telegram.restore_pending_presence()
             user = lastfm.get_user()
             self._set_status(
                 "running",
@@ -140,7 +148,6 @@ class SyncApplicationService:
                     username=user.username,
                 ),
             )
-            state = StateStore()
             channel_enabled = self.config.telegram_output_mode in {
                 "personal_channel",
                 "profile_and_channel",
@@ -167,7 +174,7 @@ class SyncApplicationService:
                 profile_music_enabled=profile_music_enabled,
             )
             placeholder = PlaceholderBackend(artwork)
-            downloader = YtDlpBackend(artwork)
+            downloader = YtDlpBackend(artwork, cancel_event=self._stop_event)
             immediate = downloader if self.config.audio_mode == "audio" else placeholder
             replacement = downloader if self.config.audio_mode == "mixed" else None
             sync = TrackSyncService(
@@ -280,6 +287,7 @@ class SyncApplicationService:
         absent_count = 0
         failures = 0
         last_identity: tuple[str, ...] | None = None
+        idle_handled = False
 
         while not self._stop_event.is_set():
             self._process_commands(sync)
@@ -295,7 +303,10 @@ class SyncApplicationService:
                 if track is None:
                     absent_count += 1
                     if absent_count >= self.config.absent_confirmations:
-                        sync.handle_no_track(self.config.remove_when_idle)
+                        if not idle_handled:
+                            sync.handle_no_track(self.config.remove_when_idle)
+                            last_identity = None
+                            idle_handled = True
                         if self.status.kind != "idle":
                             key = (
                                 "service.idle_cleaned"
@@ -308,9 +319,9 @@ class SyncApplicationService:
                             )
                             message = translate(key, self._language)
                             self._set_status("idle", message)
-                        last_identity = None
                 else:
                     absent_count = 0
+                    idle_handled = False
                     sync.handle_scrobbling_active()
                     if track.identity != last_identity or sync.active_track is None:
                         sync.handle_track(track)
@@ -319,7 +330,12 @@ class SyncApplicationService:
                         self._set_status("running", track.display_name, track)
                 failures = 0
             except LastFmError as exc:
+                absent_count = 0
                 failures += 1
+                if not exc.is_transient:
+                    log.error("Last.fm: %s; автоматические повторы остановлены", exc)
+                    self._set_status("error", f"Last.fm: {exc}")
+                    return
                 delay = min(
                     300.0, self.config.poll_interval_seconds * (2 ** min(failures, 6))
                 )
@@ -328,6 +344,7 @@ class SyncApplicationService:
                 self._wait(delay)
                 continue
             except Exception as exc:
+                absent_count = 0
                 failures += 1
                 delay = min(
                     300.0, self.config.poll_interval_seconds * (2 ** min(failures, 6))

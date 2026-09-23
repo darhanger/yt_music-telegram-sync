@@ -3,7 +3,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from yt_music_telegram_sync.config import AppConfig, ConfigurationError
+from yt_music_telegram_sync.config import (
+    AppConfig,
+    ConfigurationError,
+    load_partial,
+)
 
 
 class ConfigTests(unittest.TestCase):
@@ -109,6 +113,45 @@ class ConfigTests(unittest.TestCase):
 
         with self.assertRaises(ConfigurationError):
             config.validate()
+
+    def test_rejects_unknown_interface_theme(self) -> None:
+        config = self._valid_config()
+        config.ui_theme = "neon"
+
+        with self.assertRaises(ConfigurationError):
+            config.validate()
+
+    def test_rejects_non_object_json(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "config.json"
+            path.write_text("[]", encoding="utf-8")
+
+            with self.assertRaises(ConfigurationError):
+                AppConfig.load(path)
+
+    def test_invalid_field_type_is_reported_as_configuration_error(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "config.json"
+            payload = {
+                "lastfm_username": "user",
+                "lastfm_api_key": "key",
+                "telegram_api_id": 123,
+                "telegram_api_hash": "hash",
+                "poll_interval_seconds": "fast",
+            }
+            path.write_text(json.dumps(payload), encoding="utf-8")
+
+            with self.assertRaises(ConfigurationError):
+                AppConfig.load(path)
+
+    def test_partial_load_ignores_non_object_json(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "config.json"
+            path.write_text("[]", encoding="utf-8")
+
+            loaded = load_partial(path)
+
+        self.assertEqual(loaded, AppConfig())
 
     @staticmethod
     def _valid_config() -> AppConfig:

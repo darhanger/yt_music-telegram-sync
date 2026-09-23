@@ -4,7 +4,12 @@ import unittest
 from pathlib import Path
 
 from yt_music_telegram_sync.models import Track
-from yt_music_telegram_sync.state import StateStore, StoredTrack
+from yt_music_telegram_sync.state import (
+    StateStore,
+    StoredEmojiStatus,
+    StoredTrack,
+    TelegramRestoreState,
+)
 
 
 class StateStoreTests(unittest.TestCase):
@@ -54,6 +59,31 @@ class StateStoreTests(unittest.TestCase):
                 store.load(),
                 [StoredTrack(Track("Title", "Artist"), 42)],
             )
+
+    def test_telegram_restore_state_survives_track_updates(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "state.json"
+            store = StateStore(path)
+            expected = TelegramRestoreState(
+                playing_emoji_id=222,
+                previous_emoji_status=StoredEmojiStatus(
+                    kind="emoji",
+                    status_id=111,
+                    until=2_000_000_000,
+                ),
+                playing_personal_channel_id=444,
+                previous_personal_channel_id=333,
+            )
+
+            store.save_telegram_restore(expected)
+            store.save([StoredTrack(Track("Title", "Artist"), 42)])
+
+            self.assertEqual(store.load_telegram_restore(), expected)
+            self.assertEqual(
+                store.load(),
+                [StoredTrack(Track("Title", "Artist"), 42)],
+            )
+            self.assertEqual(json.loads(path.read_text())["version"], 3)
 
 
 if __name__ == "__main__":

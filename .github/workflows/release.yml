@@ -2,8 +2,6 @@ name: Release
 
 on:
   push:
-    branches:
-      - main
     tags:
       - "v*.*.*"
 
@@ -70,25 +68,13 @@ jobs:
         shell: pwsh
         run: |
           $packageVersion = python -c "from yt_music_telegram_sync import __version__; print(__version__)"
-          $isTag = "${{ github.ref_type }}" -eq "tag"
-          if ($isTag) {
-            $tagVersion = "${{ github.ref_name }}".TrimStart("v")
-            if ($packageVersion -ne $tagVersion) {
-              throw "Tag $tagVersion does not match package version $packageVersion"
-            }
-            $releaseTag = "${{ github.ref_name }}"
-            $releaseTitle = "YT Music Telegram Sync v$packageVersion"
-            $releasePrerelease = "false"
-          }
-          else {
-            $releaseTag = "v$packageVersion-build.${{ github.run_number }}.${{ github.run_attempt }}"
-            $releaseTitle = "YT Music Telegram Sync v$packageVersion build ${{ github.run_number }}.${{ github.run_attempt }}"
-            $releasePrerelease = "true"
+          $tagVersion = "${{ github.ref_name }}".TrimStart("v")
+          if ($packageVersion -ne $tagVersion) {
+            throw "Tag $tagVersion does not match package version $packageVersion"
           }
           "RELEASE_VERSION=$packageVersion" >> $env:GITHUB_ENV
-          "RELEASE_TAG=$releaseTag" >> $env:GITHUB_ENV
-          "RELEASE_TITLE=$releaseTitle" >> $env:GITHUB_ENV
-          "RELEASE_PRERELEASE=$releasePrerelease" >> $env:GITHUB_ENV
+          "RELEASE_TAG=${{ github.ref_name }}" >> $env:GITHUB_ENV
+          "RELEASE_TITLE=YT Music Telegram Sync v$packageVersion" >> $env:GITHUB_ENV
 
       - name: Build release assets
         shell: pwsh
@@ -110,14 +96,9 @@ jobs:
           $arguments = @(
             "release", "create", $env:RELEASE_TAG,
             "--generate-notes",
-            "--title", $env:RELEASE_TITLE
+            "--title", $env:RELEASE_TITLE,
+            "--verify-tag"
           )
-          if ($env:RELEASE_PRERELEASE -eq "true") {
-            $arguments += @("--prerelease", "--target", "${{ github.sha }}")
-          }
-          else {
-            $arguments += "--verify-tag"
-          }
           $arguments += $assets
           & gh @arguments
           if ($LASTEXITCODE -ne 0) { throw "Unable to publish GitHub Release" }

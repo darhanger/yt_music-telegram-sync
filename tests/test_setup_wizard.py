@@ -11,6 +11,7 @@ from telethon.errors import SessionPasswordNeededError
 from yt_music_telegram_sync.config import AppConfig
 from yt_music_telegram_sync.setup_wizard import (
     SetupWizard,
+    _mix_color,
     _telegram_capture_personal_channel,
     _telegram_capture_playing_emoji,
     _telegram_sign_in,
@@ -206,6 +207,21 @@ class TelegramSetupTests(unittest.TestCase):
 
 
 class SetupPersistenceTests(unittest.TestCase):
+    def test_success_status_uses_green_indicator_style(self) -> None:
+        wizard = object.__new__(SetupWizard)
+        wizard.status = Mock()
+        wizard._status_indicator = Mock()
+
+        wizard._set_status("Authorized", "success")
+
+        wizard.status.set.assert_called_once_with("Authorized")
+        wizard._status_indicator.configure.assert_called_once_with(
+            style="Success.StatusIcon.TLabel"
+        )
+
+    def test_hover_color_is_interpolated(self) -> None:
+        self.assertEqual(_mix_color("#000000", "#FFFFFF", 0.5), "#808080")
+
     def test_combined_mode_and_emoji_checkbox_enable_expected_controls(self) -> None:
         wizard = object.__new__(SetupWizard)
         wizard.telegram_output_mode = Mock()
@@ -248,6 +264,7 @@ class SetupPersistenceTests(unittest.TestCase):
             notifications_enabled=False,
             notification_sound_enabled=False,
             ui_language="en",
+            ui_theme="light",
         )
         with tempfile.TemporaryDirectory() as directory:
             config_path = Path(directory) / "config.json"
@@ -268,6 +285,7 @@ class SetupPersistenceTests(unittest.TestCase):
         self.assertFalse(loaded.notifications_enabled)
         self.assertFalse(loaded.notification_sound_enabled)
         self.assertEqual(loaded.ui_language, "en")
+        self.assertEqual(loaded.ui_theme, "light")
         self.assertTrue(wizard.saved)
         root.destroy.assert_called_once_with()
 

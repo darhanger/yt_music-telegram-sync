@@ -64,11 +64,14 @@ class AppConfig:
     notifications_enabled: bool = True
     notification_sound_enabled: bool = True
     ui_language: str = "ru"
+    ui_theme: str = "dark"
 
     def validate(self) -> None:
         language = self.ui_language if self.ui_language in SUPPORTED_LANGUAGES else "ru"
         if self.ui_language not in SUPPORTED_LANGUAGES:
             raise ConfigurationError(translate("config.language", language))
+        if self.ui_theme not in {"dark", "light"}:
+            raise ConfigurationError(translate("config.theme", language))
         missing: list[str] = []
         if not self.lastfm_username.strip():
             missing.append("Last.fm username")
@@ -124,17 +127,28 @@ class AppConfig:
                 translate("config.read_failed", "ru", error=exc)
             ) from exc
 
+        if not isinstance(raw, dict):
+            raise ConfigurationError(
+                translate(
+                    "config.invalid",
+                    "ru",
+                    error="корневое значение JSON должно быть объектом",
+                )
+            )
+
         allowed = {field.name for field in fields(cls)}
         values = {key: value for key, value in raw.items() if key in allowed}
         _migrate_emoji_enabled(raw, values)
         try:
             config = cls(**values)
-        except TypeError as exc:
+            config.validate()
+        except ConfigurationError:
+            raise
+        except (AttributeError, TypeError) as exc:
             language = str(raw.get("ui_language", "ru"))
             raise ConfigurationError(
                 translate("config.invalid", language, error=exc)
             ) from exc
-        config.validate()
         return config
 
     def save(self, path: Path | None = None) -> None:
@@ -160,8 +174,10 @@ class AppConfig:
 def load_partial(path: Path | None = None) -> AppConfig:
     config_path = path or default_config_path()
     try:
-        raw: dict[str, Any] = json.loads(config_path.read_text(encoding="utf-8"))
+        raw: Any = json.loads(config_path.read_text(encoding="utf-8"))
     except (FileNotFoundError, OSError, json.JSONDecodeError):
+        return AppConfig()
+    if not isinstance(raw, dict):
         return AppConfig()
     allowed = {field.name for field in fields(AppConfig)}
     values = {key: value for key, value in raw.items() if key in allowed}

@@ -16,6 +16,7 @@ _TRANSLATIONS: dict[Language, dict[str, str]] = {
         "window.title": "YT Music → Telegram · v{version}",
         "header.subtitle": "Last.fm nowplaying и музыка вашего профиля",
         "language.label": "Язык",
+        "theme.dark": "Тёмная тема",
         "tabs.sync": "  Синхронизация  ",
         "lastfm.username": "Имя пользователя",
         "lastfm.note": (
@@ -72,6 +73,7 @@ _TRANSLATIONS: dict[Language, dict[str, str]] = {
             "Выберите emoji status или отключите его переключателем"
         ),
         "config.language": "Неизвестный язык интерфейса",
+        "config.theme": "Неизвестная тема интерфейса",
         "config.not_created": "Конфигурация ещё не создана",
         "config.read_failed": "Не удалось прочитать конфигурацию: {error}",
         "config.invalid": "Некорректная конфигурация: {error}",
@@ -251,6 +253,10 @@ _TRANSLATIONS: dict[Language, dict[str, str]] = {
         ),
         "tray.restart_wait": "Сначала сохраните или закройте окно настроек.",
         "tray.restart_wait_title": "Перезапуск отложен",
+        "tray.stop_timeout": (
+            "Фоновые операции ещё завершаются. Повторите действие через несколько секунд."
+        ),
+        "tray.stop_timeout_title": "Завершение ещё выполняется",
         "tray.setup_discarded": (
             "Изменения не сохранены; работа продолжена с прежними настройками."
         ),
@@ -262,6 +268,7 @@ _TRANSLATIONS: dict[Language, dict[str, str]] = {
         "window.title": "YT Music → Telegram · v{version}",
         "header.subtitle": "Last.fm now playing and your profile music",
         "language.label": "Language",
+        "theme.dark": "Dark theme",
         "tabs.sync": "  Synchronization  ",
         "lastfm.username": "Username",
         "lastfm.note": (
@@ -318,6 +325,7 @@ _TRANSLATIONS: dict[Language, dict[str, str]] = {
             "Select an emoji status or disable it with the checkbox"
         ),
         "config.language": "Unknown interface language",
+        "config.theme": "Unknown interface theme",
         "config.not_created": "The configuration has not been created yet",
         "config.read_failed": "Could not read the configuration: {error}",
         "config.invalid": "Invalid configuration: {error}",
@@ -497,6 +505,10 @@ _TRANSLATIONS: dict[Language, dict[str, str]] = {
         ),
         "tray.restart_wait": "Save or close the settings window first.",
         "tray.restart_wait_title": "Restart postponed",
+        "tray.stop_timeout": (
+            "Background operations are still stopping. Try again in a few seconds."
+        ),
+        "tray.stop_timeout_title": "Shutdown still in progress",
         "tray.setup_discarded": (
             "Changes were not saved; the application resumed with the old settings."
         ),

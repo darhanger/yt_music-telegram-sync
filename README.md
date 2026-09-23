@@ -158,6 +158,7 @@ Press `Ctrl+C` to stop it.
 | Checks before idle | Number of empty responses required to confirm playback has stopped; 3 is recommended |
 | Tracks in history | Maximum LRU history size for the selected destination(s) |
 | Parallel downloads | Number of background download workers used by `mixed` mode |
+| Interface theme | Switches between the modern dark theme and the light theme; dark is the default |
 | Music destination | `Profile` saves the history to Music on Profile; `Personal channel` publishes it to the channel; `Profile + channel` does both without downloading twice |
 | Now playing channel | ID of a public broadcast channel; **Select…** reads it from the Telegram profile settings |
 | Emoji status while nowplaying | The checkbox enables automatic status changes; the selected custom emoji ID is retained while disabled |
@@ -181,7 +182,7 @@ All user data is stored outside the repository:
 %APPDATA%\YTMusicTelegramSync\
 ├── config.json          # settings and API credentials
 ├── config.draft.json    # unfinished initial-setup draft
-├── state.json           # messages created by the application
+├── state.json           # created messages and pending Telegram profile restoration
 ├── telegram.session     # authorized Telegram session
 └── logs\app.log         # rotating application log
 ```
@@ -244,13 +245,13 @@ If Python was installed manually, open a new PowerShell window before running `s
 <details>
 <summary><strong>The listening emoji remains after the application crashed</strong></summary>
 
-The previous emoji status is kept in memory so that a manual status change from another Telegram client is never overwritten. A forced process termination can therefore prevent automatic restoration; clear or change the status in Telegram and restart the application normally.
+The previous emoji status is saved in `state.json`. After a forced process termination, the application restores it on the next launch if the current status is still the listening emoji set by the application. A manual status change made in another Telegram client is never overwritten.
 </details>
 
 <details>
 <summary><strong>The music personal channel remains after a crash</strong></summary>
 
-Like the emoji status, the previous personal channel is kept only in memory to avoid overwriting a manual change from another Telegram client. After a forced termination, restore the channel manually in your profile settings. Remaining audio posts are removed after the next confirmed idle if the application is restarted in the same channel mode.
+Like the emoji status, the previous personal channel is saved in `state.json`. After a forced termination, the application restores it on the next launch only if the personal channel is still the one set by the application. Manual changes are preserved, and remaining audio posts are removed after the next confirmed idle in the same channel mode.
 </details>
 
 ## Development
@@ -270,9 +271,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\release.ps1 -Version 1.2.0 -Push
 ```
 
-Every successful push to `main` starts the release workflow and creates a prerelease with a unique tag such as `v1.1.0-build.5.1`. All checks run before the wheel and source ZIP are published.
-
-Use the command above for a stable release: the script creates a release commit when needed, creates the stable `v1.2.0` tag, and pushes both. Pushing a stable tag also starts the release workflow, but publishes a regular GitHub Release instead of a prerelease. See [CONTRIBUTING.md](CONTRIBUTING.md) or [CONTRIBUTING_RU.md](CONTRIBUTING_RU.md).
+Every push to `main` runs CI without publishing a GitHub Release. Use the command above to publish a release: the script creates a release commit when needed, creates the stable `v1.2.0` tag, and pushes both. Pushing that tag starts the release workflow, verifies the version, and publishes a regular GitHub Release with a wheel and source ZIP. See [CONTRIBUTING.md](CONTRIBUTING.md) or [CONTRIBUTING_RU.md](CONTRIBUTING_RU.md).
 
 Project structure:
 

@@ -7,7 +7,7 @@ import threading
 import time
 from collections import OrderedDict
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -29,6 +29,7 @@ class CachedTrack:
     replacement_sequence: int | None = None
     replacement_state: str = "none"
     replacement_path: Path | None = None
+    replacement_future: Future[None] | None = None
 
 
 class TrackSyncService:
@@ -64,9 +65,13 @@ class TrackSyncService:
         self._cache_changed = cache_changed
         self._playing_emoji_id = playing_emoji_id
         self._language = language
-        self._playing_emoji_active = False
+        self._playing_emoji_active = bool(
+            getattr(telegram, "playing_emoji_active", False)
+        )
         self._next_emoji_attempt = 0.0
-        self._personal_channel_active = False
+        self._personal_channel_active = bool(
+            getattr(telegram, "playing_personal_channel_active", False)
+        )
         self._next_personal_channel_attempt = 0.0
         if initial_entries:
             for entry in initial_entries[-self._cache_size:]:
@@ -178,7 +183,7 @@ class TrackSyncService:
 
     def handle_scrobbling_inactive(self) -> None:
         self._restore_personal_channel()
-        if self._playing_emoji_id <= 0 or not self._playing_emoji_active:
+        if not self._playing_emoji_active:
             self._next_emoji_attempt = 0.0
             return
         now = time.monotonic()
@@ -194,7 +199,7 @@ class TrackSyncService:
         self._next_emoji_attempt = 0.0
 
     def _restore_personal_channel(self) -> None:
-        if self._personal_channel_id <= 0 or not self._personal_channel_active:
+        if not self._personal_channel_active:
             self._next_personal_channel_attempt = 0.0
             return
         now = time.monotonic()
@@ -241,11 +246,16 @@ class TrackSyncService:
             with self._lock:
                 if not self._replacement_queue:
                     return
-                sequence = min(self._replacement_queue)
+                completed = [
+                    sequence
+                    for sequence, queued in self._replacement_queue.items()
+                    if queued.replacement_state != "pending"
+                ]
+                if not completed:
+                    return
+                sequence = min(completed)
                 entry = self._replacement_queue[sequence]
                 state = entry.replacement_state
-                if state == "pending":
-                    return
                 self._replacement_queue.pop(sequence, None)
 
             if state == "ready":
@@ -265,14 +275,8 @@ class TrackSyncService:
             for entry in self._replacement_queue.values():
                 if entry.replacement_state == "pending":
                     entry.replacement_state = "skipped"
-        if self._channel_enabled:
-            try:
-                if self._profile_music_enabled:
-                    self._clear_channel_posts()
-                else:
-                    self.clear()
-            except Exception:
-                log.exception("Не удалось удалить публикацию из личного канала")
+                    if entry.replacement_future is not None:
+                        entry.replacement_future.cancel()
         if self._playing_emoji_active:
             try:
                 self._telegram.restore_emoji_status()
@@ -291,6 +295,14 @@ class TrackSyncService:
                 )
             else:
                 self._personal_channel_active = False
+        if self._channel_enabled:
+            try:
+                if self._profile_music_enabled:
+                    self._clear_channel_posts()
+                else:
+                    self.clear()
+            except Exception:
+                log.exception("Не удалось удалить публикацию из личного канала")
         self._executor.shutdown(wait=True, cancel_futures=True)
         for entry in list(self._replacement_queue.values()):
             self._cleanup_replacement(entry)
@@ -365,11 +377,18 @@ class TrackSyncService:
             entry.replacement_sequence = sequence
             entry.replacement_state = "pending"
             self._replacement_queue[sequence] = entry
-        self._executor.submit(self._prepare_replacement, entry)
+        entry.replacement_future = self._executor.submit(
+            self._prepare_replacement,
+            entry,
+        )
 
     def _prepare_replacement(self, entry: CachedTrack) -> None:
         path = _temporary_mp3_path()
         try:
+            with self._lock:
+                if entry.replacement_state == "skipped":
+                    path.unlink(missing_ok=True)
+                    return
             assert self._replacement_backend is not None
             result = self._replacement_backend.create(path, entry.track)
             with self._lock:
@@ -487,6 +506,11 @@ class TrackSyncService:
         with self._lock:
             if entry.replacement_state == "pending":
                 entry.replacement_state = "skipped"
+                if entry.replacement_future is not None:
+                    entry.replacement_future.cancel()
+            if entry.replacement_sequence is not None:
+                self._replacement_queue.pop(entry.replacement_sequence, None)
+            self._cleanup_replacement(entry)
         if self._profile_music_enabled:
             if entry.channel_message_id is not None:
                 self._delete_channel_message(entry.channel_message_id)
@@ -556,6 +580,7 @@ class TrackSyncService:
         if entry.replacement_path is not None:
             entry.replacement_path.unlink(missing_ok=True)
             entry.replacement_path = None
+        entry.replacement_future = None
 
     def _notify_cache_changed(self) -> None:
         if self._cache_changed is None:

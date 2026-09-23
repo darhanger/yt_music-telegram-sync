@@ -82,7 +82,10 @@ class TrayController:
     def run(self) -> None:
         self.service.set_status_callback(self.on_status)
         self.service.start()
-        self.icon.run()
+        try:
+            self.icon.run()
+        finally:
+            self.service.stop()
 
     def on_status(self, status: ServiceStatus) -> None:
         self.icon.title = f"YT Music → Telegram\n{status.message}"[:127]
@@ -131,7 +134,12 @@ class TrayController:
                     self._t("tray.setup_title"),
                 )
                 return
-        self.service.stop()
+        if not self.service.stop():
+            self._notify(
+                self._t("tray.stop_timeout"),
+                self._t("tray.stop_timeout_title"),
+            )
+            return
         try:
             process = subprocess.Popen(
                 [
@@ -201,7 +209,12 @@ class TrayController:
         )
 
     def _restart_application(self) -> None:
-        self.service.stop()
+        if not self.service.stop():
+            self._notify(
+                self._t("tray.stop_timeout"),
+                self._t("tray.stop_timeout_title"),
+            )
+            return
         try:
             subprocess.Popen(
                 [
@@ -227,7 +240,14 @@ class TrayController:
             if self._exiting:
                 return
             self._exiting = True
-        self.service.stop()
+        if not self.service.stop():
+            with self._exit_lock:
+                self._exiting = False
+            self._notify(
+                self._t("tray.stop_timeout"),
+                self._t("tray.stop_timeout_title"),
+            )
+            return
         icon.stop()
 
     def _notify(self, message: str, title: str) -> None:

@@ -5,6 +5,7 @@ import logging
 import shutil
 import tempfile
 import threading
+import time
 from collections import OrderedDict
 from pathlib import Path
 from typing import Protocol
@@ -18,6 +19,7 @@ from .models import Track
 log = logging.getLogger(__name__)
 
 _MAX_ARTWORK_BYTES = 8 * 1024 * 1024
+_MAX_DOWNLOAD_SECONDS = 300.0
 _SILENCE_MP3_B64 = "SUQzBAAAAAAAIlRTU0UAAAAOAAADTGF2ZjYyLjMuMTAwAAAAAAAAAAAAAAD/+1AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABJbmZvAAAADwAAAAUAAAj5AEVFRUVFRUVFRUVFRUVFRUVFRUV0dHR0dHR0dHR0dHR0dHR0dHR0dKKioqKioqKioqKioqKioqKioqKi0dHR0dHR0dHR0dHR0dHR0dHR0dH//////////////////////////wAAAABMYXZjNjIuMTEAAAAAAAAAAAAAAAAkAwYAAAAAAAAI+ZbQn/gAAAAAAAAAAAAAAAAAAAAA//uQZAAP8AAAaQAAAAgAAA0gAAABAAABpAAAACAAADSAAAAETEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVTEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//uSZECP8AAAaQAAAAgAAA0gAAABAAABpAAAACAAADSAAAAEVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVUxBTUUzLjEwMFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVf/7kmRAj/AAAGkAAAAIAAANIAAAAQAAAaQAAAAgAAA0gAAABFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FMy4xMDBVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/+5JkQI/wAABpAAAACAAADSAAAAEAAAGkAAAAIAAANIAAAARVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVTEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//uSZECP8AAAaQAAAAgAAA0gAAABAAABpAAAACAAADSAAAAEVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVQ=="
 
 
@@ -26,7 +28,12 @@ class TrackBackend(Protocol):
 
 
 class ArtworkLoader:
-    def __init__(self, capacity: int = 16) -> None:
+    def __init__(
+        self,
+        capacity: int = 16,
+        *,
+        transport: httpx.BaseTransport | None = None,
+    ) -> None:
         self._capacity = capacity
         self._cache: OrderedDict[str, tuple[bytes, str]] = OrderedDict()
         self._lock = threading.Lock()
@@ -34,6 +41,7 @@ class ArtworkLoader:
             timeout=httpx.Timeout(10.0),
             headers={"User-Agent": "YTMusicTelegramSync/1.0"},
             follow_redirects=True,
+            transport=transport,
         )
 
     def close(self) -> None:
@@ -49,16 +57,34 @@ class ArtworkLoader:
                 return cached
 
         try:
-            response = self._client.get(url)
-            response.raise_for_status()
-        except httpx.HTTPError as exc:
+            with self._client.stream("GET", url) as response:
+                response.raise_for_status()
+                raw_length = response.headers.get("content-length")
+                if raw_length is not None and int(raw_length) > _MAX_ARTWORK_BYTES:
+                    log.warning(
+                        "Обложка превышает лимит %d байт",
+                        _MAX_ARTWORK_BYTES,
+                    )
+                    return None
+                content = bytearray()
+                for chunk in response.iter_bytes():
+                    content.extend(chunk)
+                    if len(content) > _MAX_ARTWORK_BYTES:
+                        log.warning(
+                            "Обложка превышает лимит %d байт",
+                            _MAX_ARTWORK_BYTES,
+                        )
+                        return None
+                data = bytes(content)
+                mime = response.headers.get("content-type", "image/jpeg").split(
+                    ";", 1
+                )[0]
+        except (ValueError, httpx.HTTPError) as exc:
             log.warning("Не удалось скачать обложку: %s", exc)
             return None
-        data = response.content
-        if not data or len(data) > _MAX_ARTWORK_BYTES:
-            log.warning("Обложка пуста или превышает лимит %d байт", _MAX_ARTWORK_BYTES)
+        if not data:
+            log.warning("Обложка пуста")
             return None
-        mime = response.headers.get("content-type", "image/jpeg").split(";", 1)[0]
         if not mime.startswith("image/"):
             mime = "image/jpeg"
         value = (data, mime)
@@ -81,10 +107,18 @@ class PlaceholderBackend:
 
 
 class YtDlpBackend:
-    def __init__(self, artwork: ArtworkLoader) -> None:
+    def __init__(
+        self,
+        artwork: ArtworkLoader,
+        *,
+        cancel_event: threading.Event | None = None,
+    ) -> None:
         self._artwork = artwork
+        self._cancel_event = cancel_event
 
     def create(self, destination: Path, track: Track) -> bool:
+        if self._cancelled():
+            return False
         try:
             from yt_dlp import YoutubeDL
             from yt_dlp.utils import DownloadError
@@ -93,6 +127,14 @@ class YtDlpBackend:
             return False
 
         query = f"ytsearch1:{track.artist} - {track.title} official audio"
+        deadline = time.monotonic() + _MAX_DOWNLOAD_SECONDS
+
+        def check_cancelled(_status: object) -> None:
+            if self._cancelled():
+                raise _DownloadCancelled("download cancelled")
+            if time.monotonic() >= deadline:
+                raise _DownloadCancelled("download timed out")
+
         with tempfile.TemporaryDirectory(prefix="ytmts-download-") as temp_dir:
             output_template = str(Path(temp_dir) / "track.%(ext)s")
             options = {
@@ -103,6 +145,8 @@ class YtDlpBackend:
                 "no_warnings": True,
                 "retries": 3,
                 "socket_timeout": 20,
+                "progress_hooks": [check_cancelled],
+                "postprocessor_hooks": [check_cancelled],
                 "postprocessors": [
                     {
                         "key": "FFmpegExtractAudio",
@@ -114,10 +158,15 @@ class YtDlpBackend:
             try:
                 with YoutubeDL(options) as downloader:
                     result = downloader.download([query])
-            except (DownloadError, OSError) as exc:
-                log.warning(
-                    "Не удалось найти или скачать %s: %s", track.display_name, exc
-                )
+            except (DownloadError, OSError, _DownloadCancelled) as exc:
+                if self._cancelled():
+                    log.info("Загрузка отменена: %s", track.display_name)
+                else:
+                    log.warning(
+                        "Не удалось найти или скачать %s: %s",
+                        track.display_name,
+                        exc,
+                    )
                 return False
             downloaded = Path(temp_dir) / "track.mp3"
             if result != 0 or not downloaded.is_file():
@@ -130,6 +179,13 @@ class YtDlpBackend:
         except Exception:
             log.exception("Не удалось записать метаданные в скачанный MP3")
         return True
+
+    def _cancelled(self) -> bool:
+        return self._cancel_event is not None and self._cancel_event.is_set()
+
+
+class _DownloadCancelled(RuntimeError):
+    pass
 
 
 def apply_track_tags(

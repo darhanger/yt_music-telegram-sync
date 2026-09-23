@@ -4,7 +4,9 @@ import asyncio
 import inspect
 import logging
 import re
-from collections.abc import Awaitable
+import threading
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -15,6 +17,7 @@ from telethon.tl.types import DocumentAttributeAudio, DocumentAttributeFilename
 
 from .localization import translate
 from .models import Track
+from .state import StoredEmojiStatus, TelegramRestoreState
 
 log = logging.getLogger(__name__)
 _INVALID_FILENAME_RE = re.compile(r'[\\/:*?"<>|\x00-\x1f]+')
@@ -33,25 +36,67 @@ class TelegramManager:
         api_hash: str,
         *,
         language: str = "ru",
+        restore_state: TelegramRestoreState | None = None,
+        restore_state_changed: Callable[[TelegramRestoreState], None] | None = None,
     ) -> None:
+        pending = restore_state or TelegramRestoreState()
         self._loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self._loop)
         self._client = TelegramClient(str(session_path), api_id, api_hash, loop=self._loop)
+        self._loop_thread = threading.Thread(
+            target=self._run_event_loop,
+            name="telegram-event-loop",
+            daemon=True,
+        )
+        self._loop_thread.start()
         self._language = language
         self._closed = False
-        self._playing_emoji_id = 0
-        self._previous_emoji_status: Any | None = None
-        self._playing_emoji_active = False
-        self._playing_personal_channel_id = 0
-        self._previous_personal_channel_id = 0
+        self._restore_state_changed = restore_state_changed
+        self._playing_emoji_id = pending.playing_emoji_id
+        self._previous_emoji_status: Any | None = _emoji_status_from_stored(
+            pending.previous_emoji_status
+        )
+        self._playing_emoji_active = (
+            self._playing_emoji_id > 0 and self._previous_emoji_status is not None
+        )
+        self._playing_personal_channel_id = pending.playing_personal_channel_id
+        self._previous_personal_channel_id = pending.previous_personal_channel_id
         self._previous_personal_channel: Any | None = None
-        self._playing_personal_channel_active = False
+        self._playing_personal_channel_active = (
+            self._playing_personal_channel_id > 0
+        )
         self._personal_channels: dict[int, Any] = {}
+
+    @property
+    def playing_emoji_active(self) -> bool:
+        return self._playing_emoji_active
+
+    @property
+    def playing_personal_channel_active(self) -> bool:
+        return self._playing_personal_channel_active
 
     def _run(self, operation: Awaitable[T]) -> T:
         if self._closed:
             raise TelegramError(translate("telegram.client_closed", self._language))
-        return self._loop.run_until_complete(operation)
+        future = asyncio.run_coroutine_threadsafe(
+            _await_operation(operation),
+            self._loop,
+        )
+        return future.result()
+
+    def _run_event_loop(self) -> None:
+        asyncio.set_event_loop(self._loop)
+        try:
+            self._loop.run_forever()
+        finally:
+            pending = asyncio.all_tasks(self._loop)
+            for task in pending:
+                task.cancel()
+            if pending:
+                self._loop.run_until_complete(
+                    asyncio.gather(*pending, return_exceptions=True)
+                )
+            self._loop.run_until_complete(self._loop.shutdown_asyncgens())
+            self._loop.close()
 
     def _disconnect(self) -> None:
         operation = self._client.disconnect()
@@ -64,6 +109,22 @@ class TelegramManager:
             self._disconnect()
             raise TelegramError(translate("telegram.unauthorized", self._language))
         log.info("Telegram подключён")
+
+    def restore_pending_presence(self) -> None:
+        if self._playing_personal_channel_active:
+            try:
+                self.restore_personal_channel()
+            except Exception:
+                log.exception(
+                    "Не удалось восстановить личный канал после предыдущего запуска"
+                )
+        if self._playing_emoji_active:
+            try:
+                self.restore_emoji_status()
+            except Exception:
+                log.exception(
+                    "Не удалось восстановить Telegram emoji status после предыдущего запуска"
+                )
 
     def close(self) -> None:
         if self._closed:
@@ -85,8 +146,10 @@ class TelegramManager:
                 self._disconnect()
         finally:
             self._closed = True
-            self._loop.close()
-            asyncio.set_event_loop(None)
+            self._loop.call_soon_threadsafe(self._loop.stop)
+            self._loop_thread.join(timeout=5.0)
+            if self._loop_thread.is_alive():
+                log.warning("Поток Telegram event loop не завершился вовремя")
 
     def activate_playing_emoji(self, document_id: int) -> bool:
         if document_id <= 0:
@@ -105,17 +168,26 @@ class TelegramManager:
             getattr(user, "emoji_status", None),
             language=self._language,
         )
-        request = functions.account.UpdateEmojiStatusRequest(
-            types.EmojiStatus(document_id=document_id)
-        )
-        if self._run(self._client(request)) is False:
-            raise TelegramError(
-                translate("telegram.emoji_set_rejected", self._language)
-            )
-
         self._previous_emoji_status = previous_status
         self._playing_emoji_id = document_id
         self._playing_emoji_active = True
+        try:
+            self._notify_restore_state_changed()
+        except Exception:
+            self._forget_emoji_status(notify=False)
+            raise
+
+        request = functions.account.UpdateEmojiStatusRequest(
+            types.EmojiStatus(document_id=document_id)
+        )
+        # A connection failure leaves the recovery record intact because the server
+        # may already have applied the request.
+        result = self._run(self._client(request))
+        if result is False:
+            self._forget_emoji_status()
+            raise TelegramError(
+                translate("telegram.emoji_set_rejected", self._language)
+            )
         log.info("Telegram emoji status для активного nowplaying установлен")
         return True
 
@@ -147,10 +219,12 @@ class TelegramManager:
         self._forget_emoji_status()
         log.info("Исходный Telegram emoji status восстановлен")
 
-    def _forget_emoji_status(self) -> None:
+    def _forget_emoji_status(self, *, notify: bool = True) -> None:
         self._playing_emoji_id = 0
         self._previous_emoji_status = None
         self._playing_emoji_active = False
+        if notify:
+            self._notify_restore_state_changed()
 
     def activate_personal_channel(self, channel_id: int) -> bool:
         if channel_id <= 0:
@@ -170,19 +244,27 @@ class TelegramManager:
             raise TelegramError(
                 translate("telegram.telethon_channel_too_old", self._language)
             )
-        if previous_id != channel_id:
-            result = self._run(
-                self._client(request_class(utils.get_input_channel(channel)))
-            )
-            if result is False:
-                raise TelegramError(
-                    translate("telegram.channel_set_rejected", self._language)
-                )
-
         self._previous_personal_channel_id = previous_id
         self._previous_personal_channel = previous_channel
         self._playing_personal_channel_id = channel_id
         self._playing_personal_channel_active = True
+        try:
+            self._notify_restore_state_changed()
+        except Exception:
+            self._forget_personal_channel(notify=False)
+            raise
+
+        if previous_id != channel_id:
+            # Preserve the record on a connection failure because the remote result
+            # is ambiguous.
+            result = self._run(
+                self._client(request_class(utils.get_input_channel(channel)))
+            )
+            if result is False:
+                self._forget_personal_channel()
+                raise TelegramError(
+                    translate("telegram.channel_set_rejected", self._language)
+                )
         log.info("Личный канал Telegram для активного nowplaying установлен")
         return True
 
@@ -200,8 +282,12 @@ class TelegramManager:
 
         previous_channel = self._previous_personal_channel
         if previous_channel is None:
-            raise TelegramError(
-                translate("telegram.channel_previous_missing", self._language)
+            previous_channel = (
+                utils.get_input_channel(
+                    self._get_personal_channel(self._previous_personal_channel_id)
+                )
+                if self._previous_personal_channel_id
+                else types.InputChannelEmpty()
             )
         request_class = getattr(functions.account, "UpdatePersonalChannelRequest", None)
         if request_class is None:
@@ -217,11 +303,40 @@ class TelegramManager:
         self._forget_personal_channel()
         log.info("Исходный личный канал Telegram восстановлен")
 
-    def _forget_personal_channel(self) -> None:
+    def _forget_personal_channel(self, *, notify: bool = True) -> None:
         self._playing_personal_channel_id = 0
         self._previous_personal_channel_id = 0
         self._previous_personal_channel = None
         self._playing_personal_channel_active = False
+        if notify:
+            self._notify_restore_state_changed()
+
+    def _notify_restore_state_changed(self) -> None:
+        if self._restore_state_changed is None:
+            return
+        previous_status = (
+            _stored_emoji_status(self._previous_emoji_status)
+            if self._playing_emoji_active
+            else None
+        )
+        self._restore_state_changed(
+            TelegramRestoreState(
+                playing_emoji_id=(
+                    self._playing_emoji_id if previous_status is not None else 0
+                ),
+                previous_emoji_status=previous_status,
+                playing_personal_channel_id=(
+                    self._playing_personal_channel_id
+                    if self._playing_personal_channel_active
+                    else 0
+                ),
+                previous_personal_channel_id=(
+                    self._previous_personal_channel_id
+                    if self._playing_personal_channel_active
+                    else 0
+                ),
+            )
+        )
 
     def _current_personal_channel_id(self) -> int:
         result = self._run(
@@ -363,6 +478,10 @@ def _track_filename(track: Track) -> str:
     return f"{stem[:180]}.mp3"
 
 
+async def _await_operation(operation: Awaitable[T]) -> T:
+    return await operation
+
+
 def _emoji_status_for_update(status: Any, *, language: str = "ru") -> Any:
     if status is None or isinstance(status, types.EmojiStatusEmpty):
         return types.EmojiStatusEmpty()
@@ -383,6 +502,55 @@ def _emoji_status_for_update(status: Any, *, language: str = "ru") -> Any:
             status_type=type(status).__name__,
         )
     )
+
+
+def _stored_emoji_status(status: Any) -> StoredEmojiStatus | None:
+    if status is None:
+        return None
+    if isinstance(status, types.EmojiStatusEmpty):
+        return StoredEmojiStatus(kind="empty")
+    if isinstance(
+        status,
+        (types.EmojiStatusCollectible, types.InputEmojiStatusCollectible),
+    ):
+        return StoredEmojiStatus(
+            kind="collectible",
+            status_id=int(status.collectible_id),
+            until=_emoji_until_timestamp(getattr(status, "until", None)),
+        )
+    if isinstance(status, types.EmojiStatus):
+        return StoredEmojiStatus(
+            kind="emoji",
+            status_id=int(status.document_id),
+            until=_emoji_until_timestamp(getattr(status, "until", None)),
+        )
+    return None
+
+
+def _emoji_status_from_stored(status: StoredEmojiStatus | None) -> Any | None:
+    if status is None:
+        return None
+    until = (
+        datetime.fromtimestamp(status.until, tz=UTC)
+        if status.until is not None
+        else None
+    )
+    if status.kind == "empty":
+        return types.EmojiStatusEmpty()
+    if status.kind == "collectible":
+        return types.InputEmojiStatusCollectible(
+            collectible_id=status.status_id,
+            until=until,
+        )
+    return types.EmojiStatus(document_id=status.status_id, until=until)
+
+
+def _emoji_until_timestamp(value: object) -> int | None:
+    if isinstance(value, datetime):
+        return int(value.timestamp())
+    if isinstance(value, int):
+        return value
+    return None
 
 
 def _is_playing_emoji_status(status: Any, document_id: int) -> bool:

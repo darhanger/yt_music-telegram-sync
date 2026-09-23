@@ -25,6 +25,16 @@ class TraySettingsLifecycleTests(unittest.TestCase):
         controller._notify = notify  # type: ignore[method-assign]
         return controller, service, icon, notify
 
+    def test_service_is_stopped_if_tray_loop_ends_unexpectedly(self) -> None:
+        controller, service, icon, _ = self._controller(Mock())
+        icon.run.side_effect = RuntimeError("tray failed")
+
+        with self.assertRaisesRegex(RuntimeError, "tray failed"):
+            controller.run()
+
+        service.start.assert_called_once_with()
+        service.stop.assert_called_once_with()
+
     def test_saved_settings_restart_tray_with_same_config(self) -> None:
         setup_process = Mock()
         setup_process.wait.return_value = 0
@@ -73,6 +83,19 @@ class TraySettingsLifecycleTests(unittest.TestCase):
         popen.assert_not_called()
         service.stop.assert_not_called()
         notify.assert_called_once()
+
+    def test_settings_are_not_opened_while_service_is_still_stopping(self) -> None:
+        controller, service, _, notify = self._controller(None)  # type: ignore[arg-type]
+        service.stop.return_value = False
+
+        with patch("yt_music_telegram_sync.tray.subprocess.Popen") as popen:
+            controller._open_setup(Mock(), Mock())
+
+        popen.assert_not_called()
+        notify.assert_called_once_with(
+            controller._t("tray.stop_timeout"),
+            controller._t("tray.stop_timeout_title"),
+        )
 
     def test_notifications_can_be_disabled(self) -> None:
         controller = object.__new__(TrayController)

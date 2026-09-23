@@ -381,6 +381,64 @@ class TrackSyncTests(unittest.TestCase):
         finally:
             service.close()
 
+    def test_completed_replacement_is_not_blocked_by_an_earlier_download(self) -> None:
+        telegram = FakeTelegram()
+        backend = FakeBackend()
+        service = TrackSyncService(
+            telegram,  # type: ignore[arg-type]
+            backend,
+            backend,  # type: ignore[arg-type]
+            cache_size=3,
+        )
+        pending = CachedTrack(
+            Track("Slow", "Artist"),
+            message_id=1,
+            document=1,
+            replacement_sequence=0,
+            replacement_state="pending",
+        )
+        failed = CachedTrack(
+            Track("Finished", "Artist"),
+            message_id=2,
+            document=2,
+            replacement_sequence=1,
+            replacement_state="failed",
+        )
+        service._replacement_queue = {0: pending, 1: failed}
+
+        try:
+            service.process_ready_replacements()
+        finally:
+            service.close()
+
+        self.assertEqual(failed.replacement_state, "applied")
+        self.assertEqual(pending.replacement_state, "skipped")
+
+    def test_removed_track_is_pruned_from_replacement_queue(self) -> None:
+        telegram = FakeTelegram()
+        backend = FakeBackend()
+        service = TrackSyncService(
+            telegram,  # type: ignore[arg-type]
+            backend,
+            backend,  # type: ignore[arg-type]
+            cache_size=3,
+        )
+        entry = CachedTrack(
+            Track("Removed", "Artist"),
+            message_id=1,
+            document=1,
+            replacement_sequence=0,
+            replacement_state="pending",
+        )
+        service._replacement_queue = {0: entry}
+
+        try:
+            service._remove_entry(entry)
+            self.assertEqual(service._replacement_queue, {})
+            self.assertEqual(entry.replacement_state, "skipped")
+        finally:
+            service.close()
+
 
 if __name__ == "__main__":
     unittest.main()

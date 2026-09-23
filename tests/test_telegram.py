@@ -1,3 +1,5 @@
+import asyncio
+import threading
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -7,6 +9,10 @@ from unittest.mock import AsyncMock, Mock, patch
 from telethon import functions, types
 
 from yt_music_telegram_sync.models import Track
+from yt_music_telegram_sync.state import (
+    StoredEmojiStatus,
+    TelegramRestoreState,
+)
 from yt_music_telegram_sync.telegram import (
     TelegramManager,
     _emoji_status_for_update,
@@ -25,6 +31,25 @@ class TelegramFilenameTests(unittest.TestCase):
 
 
 class TelegramManagerTests(unittest.TestCase):
+    def test_event_loop_keeps_running_between_telegram_calls(self) -> None:
+        client = Mock()
+        client.is_connected.return_value = False
+        completed = threading.Event()
+
+        async def finish_later() -> None:
+            await asyncio.sleep(0.01)
+            completed.set()
+
+        with TemporaryDirectory() as directory:
+            with patch(
+                "yt_music_telegram_sync.telegram.TelegramClient",
+                return_value=client,
+            ):
+                manager = TelegramManager(Path(directory) / "telegram", 1, "hash")
+                asyncio.run_coroutine_threadsafe(finish_later(), manager._loop)
+                self.assertTrue(completed.wait(timeout=1.0))
+                manager.close()
+
     def test_async_telethon_operations_are_awaited(self) -> None:
         document = object()
         message = SimpleNamespace(id=42, media=SimpleNamespace(document=document))
@@ -69,12 +94,18 @@ class TelegramManagerTests(unittest.TestCase):
             premium=True,
             status=types.EmojiStatus(document_id=111),
         )
+        changes: list[TelegramRestoreState] = []
         with TemporaryDirectory() as directory:
             with patch(
                 "yt_music_telegram_sync.telegram.TelegramClient",
                 return_value=client,
             ):
-                manager = TelegramManager(Path(directory) / "telegram", 1, "hash")
+                manager = TelegramManager(
+                    Path(directory) / "telegram",
+                    1,
+                    "hash",
+                    restore_state_changed=changes.append,
+                )
                 self.assertTrue(manager.activate_playing_emoji(222))
                 manager.restore_emoji_status()
                 manager.close()
@@ -84,6 +115,8 @@ class TelegramManagerTests(unittest.TestCase):
             [222, 111],
         )
         self.assertEqual(state["status"].document_id, 111)
+        self.assertEqual(changes[0].playing_emoji_id, 222)
+        self.assertEqual(changes[-1], TelegramRestoreState())
 
     def test_manual_emoji_change_is_not_overwritten(self) -> None:
         client, state, requests = self._emoji_client(
@@ -104,6 +137,130 @@ class TelegramManagerTests(unittest.TestCase):
         self.assertEqual(len(requests), 1)
         self.assertEqual(state["status"].document_id, 333)
 
+    def test_pending_emoji_is_restored_after_restart(self) -> None:
+        client, state, requests = self._emoji_client(
+            premium=True,
+            status=types.EmojiStatus(document_id=222),
+        )
+        changes: list[TelegramRestoreState] = []
+        pending = TelegramRestoreState(
+            playing_emoji_id=222,
+            previous_emoji_status=StoredEmojiStatus(
+                kind="emoji",
+                status_id=111,
+            ),
+        )
+        with TemporaryDirectory() as directory:
+            with patch(
+                "yt_music_telegram_sync.telegram.TelegramClient",
+                return_value=client,
+            ):
+                manager = TelegramManager(
+                    Path(directory) / "telegram",
+                    1,
+                    "hash",
+                    restore_state=pending,
+                    restore_state_changed=changes.append,
+                )
+                manager.restore_pending_presence()
+                manager.close()
+
+        self.assertEqual(
+            [request.emoji_status.document_id for request in requests],
+            [111],
+        )
+        self.assertEqual(state["status"].document_id, 111)
+        self.assertEqual(changes[-1], TelegramRestoreState())
+
+    def test_pending_emoji_restores_empty_status_after_restart(self) -> None:
+        client, state, requests = self._emoji_client(
+            premium=True,
+            status=types.EmojiStatus(document_id=222),
+        )
+        pending = TelegramRestoreState(
+            playing_emoji_id=222,
+            previous_emoji_status=StoredEmojiStatus(kind="empty"),
+        )
+        with TemporaryDirectory() as directory:
+            with patch(
+                "yt_music_telegram_sync.telegram.TelegramClient",
+                return_value=client,
+            ):
+                manager = TelegramManager(
+                    Path(directory) / "telegram",
+                    1,
+                    "hash",
+                    restore_state=pending,
+                )
+                manager.restore_pending_presence()
+                manager.close()
+
+        self.assertEqual(len(requests), 1)
+        self.assertIsInstance(state["status"], types.EmojiStatusEmpty)
+
+    def test_pending_emoji_does_not_overwrite_manual_change(self) -> None:
+        client, state, requests = self._emoji_client(
+            premium=True,
+            status=types.EmojiStatus(document_id=333),
+        )
+        changes: list[TelegramRestoreState] = []
+        pending = TelegramRestoreState(
+            playing_emoji_id=222,
+            previous_emoji_status=StoredEmojiStatus(
+                kind="emoji",
+                status_id=111,
+            ),
+        )
+        with TemporaryDirectory() as directory:
+            with patch(
+                "yt_music_telegram_sync.telegram.TelegramClient",
+                return_value=client,
+            ):
+                manager = TelegramManager(
+                    Path(directory) / "telegram",
+                    1,
+                    "hash",
+                    restore_state=pending,
+                    restore_state_changed=changes.append,
+                )
+                manager.restore_pending_presence()
+                manager.close()
+
+        self.assertEqual(requests, [])
+        self.assertEqual(state["status"].document_id, 333)
+        self.assertEqual(changes[-1], TelegramRestoreState())
+
+    def test_emoji_recovery_record_survives_ambiguous_request_failure(self) -> None:
+        client, _state, _requests = self._emoji_client(
+            premium=True,
+            status=types.EmojiStatus(document_id=111),
+        )
+
+        async def fail_request(_request):
+            raise ConnectionError("connection lost")
+
+        client.side_effect = fail_request
+        changes: list[TelegramRestoreState] = []
+        with TemporaryDirectory() as directory:
+            with patch(
+                "yt_music_telegram_sync.telegram.TelegramClient",
+                return_value=client,
+            ):
+                manager = TelegramManager(
+                    Path(directory) / "telegram",
+                    1,
+                    "hash",
+                    restore_state_changed=changes.append,
+                )
+                with self.assertRaises(ConnectionError):
+                    manager.activate_playing_emoji(222)
+
+                self.assertTrue(manager.playing_emoji_active)
+                self.assertEqual(changes[-1].playing_emoji_id, 222)
+
+                client.is_connected.return_value = False
+                manager.close()
+
     def test_playing_emoji_requires_premium(self) -> None:
         client, state, requests = self._emoji_client(
             premium=False,
@@ -123,18 +280,27 @@ class TelegramManagerTests(unittest.TestCase):
 
     def test_personal_channel_restores_previous_channel(self) -> None:
         client, state, updates = self._personal_channel_client(channel_id=111)
+        changes: list[TelegramRestoreState] = []
         with TemporaryDirectory() as directory:
             with patch(
                 "yt_music_telegram_sync.telegram.TelegramClient",
                 return_value=client,
             ):
-                manager = TelegramManager(Path(directory) / "telegram", 1, "hash")
+                manager = TelegramManager(
+                    Path(directory) / "telegram",
+                    1,
+                    "hash",
+                    restore_state_changed=changes.append,
+                )
                 self.assertTrue(manager.activate_personal_channel(222))
                 manager.restore_personal_channel()
                 manager.close()
 
         self.assertEqual(updates, [222, 111])
         self.assertEqual(state["channel_id"], 111)
+        self.assertEqual(changes[0].playing_personal_channel_id, 222)
+        self.assertEqual(changes[0].previous_personal_channel_id, 111)
+        self.assertEqual(changes[-1], TelegramRestoreState())
 
     def test_manual_personal_channel_change_is_not_overwritten(self) -> None:
         client, state, updates = self._personal_channel_client(channel_id=111)
@@ -151,6 +317,55 @@ class TelegramManagerTests(unittest.TestCase):
 
         self.assertEqual(updates, [222])
         self.assertEqual(state["channel_id"], 333)
+
+    def test_pending_personal_channel_is_restored_after_restart(self) -> None:
+        client, state, updates = self._personal_channel_client(channel_id=222)
+        changes: list[TelegramRestoreState] = []
+        pending = TelegramRestoreState(
+            playing_personal_channel_id=222,
+            previous_personal_channel_id=111,
+        )
+        with TemporaryDirectory() as directory:
+            with patch(
+                "yt_music_telegram_sync.telegram.TelegramClient",
+                return_value=client,
+            ):
+                manager = TelegramManager(
+                    Path(directory) / "telegram",
+                    1,
+                    "hash",
+                    restore_state=pending,
+                    restore_state_changed=changes.append,
+                )
+                manager.restore_pending_presence()
+                manager.close()
+
+        self.assertEqual(updates, [111])
+        self.assertEqual(state["channel_id"], 111)
+        self.assertEqual(changes[-1], TelegramRestoreState())
+
+    def test_pending_personal_channel_restores_no_channel_after_restart(self) -> None:
+        client, state, updates = self._personal_channel_client(channel_id=222)
+        pending = TelegramRestoreState(
+            playing_personal_channel_id=222,
+            previous_personal_channel_id=0,
+        )
+        with TemporaryDirectory() as directory:
+            with patch(
+                "yt_music_telegram_sync.telegram.TelegramClient",
+                return_value=client,
+            ):
+                manager = TelegramManager(
+                    Path(directory) / "telegram",
+                    1,
+                    "hash",
+                    restore_state=pending,
+                )
+                manager.restore_pending_presence()
+                manager.close()
+
+        self.assertEqual(updates, [0])
+        self.assertEqual(state["channel_id"], 0)
 
     def test_channel_message_operations_use_selected_channel(self) -> None:
         client, _state, _updates = self._personal_channel_client(channel_id=111)
