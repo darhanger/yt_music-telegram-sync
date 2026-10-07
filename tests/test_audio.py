@@ -6,7 +6,11 @@ from unittest.mock import Mock, patch
 
 import httpx
 
-from yt_music_telegram_sync.audio import ArtworkLoader, YtDlpBackend
+from yt_music_telegram_sync.audio import (
+    ArtworkLoader,
+    YtDlpBackend,
+    _select_search_result,
+)
 from yt_music_telegram_sync.models import Track
 
 
@@ -23,6 +27,43 @@ class YtDlpBackendTests(unittest.TestCase):
 
             self.assertFalse(created)
             self.assertFalse(destination.exists())
+
+    def test_search_selects_matching_track_instead_of_first_result(self) -> None:
+        wrong = {
+            "title": "What's Left of You | So Hollow 2 - Acoustic Lull",
+            "channel": "Acoustic Lull",
+            "duration": 1306,
+            "url": "https://www.youtube.com/watch?v=wrong",
+        }
+        expected = {
+            "title": "Don't turn away",
+            "channel": "HOLLOWFRAME - Topic",
+            "duration": 283,
+            "url": "https://www.youtube.com/watch?v=expected",
+        }
+
+        selected = _select_search_result(
+            {"entries": [wrong, expected]},
+            Track("Don't turn away", "HOLLOWFRAME"),
+        )
+
+        self.assertIs(selected, expected)
+
+    def test_search_rejects_similar_title_by_same_artist(self) -> None:
+        selected = _select_search_result(
+            {
+                "entries": [
+                    {
+                        "title": "Don't fall away",
+                        "channel": "HOLLOWFRAME - Topic",
+                        "url": "https://www.youtube.com/watch?v=wrong",
+                    }
+                ]
+            },
+            Track("Don't turn away", "HOLLOWFRAME"),
+        )
+
+        self.assertIsNone(selected)
 
 
 class ArtworkLoaderTests(unittest.TestCase):

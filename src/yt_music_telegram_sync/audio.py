@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import base64
 import logging
+import re
 import shutil
 import tempfile
 import threading
 import time
+import unicodedata
 from collections import OrderedDict
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 import httpx
 from mutagen.id3 import APIC, ID3, TALB, TIT2, TPE1
@@ -20,6 +22,7 @@ log = logging.getLogger(__name__)
 
 _MAX_ARTWORK_BYTES = 8 * 1024 * 1024
 _MAX_DOWNLOAD_SECONDS = 300.0
+_SEARCH_RESULT_COUNT = 10
 _SILENCE_MP3_B64 = "SUQzBAAAAAAAIlRTU0UAAAAOAAADTGF2ZjYyLjMuMTAwAAAAAAAAAAAAAAD/+1AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABJbmZvAAAADwAAAAUAAAj5AEVFRUVFRUVFRUVFRUVFRUVFRUV0dHR0dHR0dHR0dHR0dHR0dHR0dKKioqKioqKioqKioqKioqKioqKi0dHR0dHR0dHR0dHR0dHR0dHR0dH//////////////////////////wAAAABMYXZjNjIuMTEAAAAAAAAAAAAAAAAkAwYAAAAAAAAI+ZbQn/gAAAAAAAAAAAAAAAAAAAAA//uQZAAP8AAAaQAAAAgAAA0gAAABAAABpAAAACAAADSAAAAETEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVTEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//uSZECP8AAAaQAAAAgAAA0gAAABAAABpAAAACAAADSAAAAEVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVUxBTUUzLjEwMFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVf/7kmRAj/AAAGkAAAAIAAANIAAAAQAAAaQAAAAgAAA0gAAABFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FMy4xMDBVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/+5JkQI/wAABpAAAACAAADSAAAAEAAAGkAAAAIAAANIAAAARVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVTEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//uSZECP8AAAaQAAAAgAAA0gAAABAAABpAAAACAAADSAAAAEVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVQ=="
 
 
@@ -126,7 +129,7 @@ class YtDlpBackend:
             log.error("yt-dlp не установлен")
             return False
 
-        query = f"ytsearch1:{track.artist} - {track.title} official audio"
+        query = f"ytsearch{_SEARCH_RESULT_COUNT}:{track.artist} {track.title}"
         deadline = time.monotonic() + _MAX_DOWNLOAD_SECONDS
 
         def check_cancelled(_status: object) -> None:
@@ -140,6 +143,7 @@ class YtDlpBackend:
             options = {
                 "format": "bestaudio/best",
                 "outtmpl": output_template,
+                "extract_flat": "in_playlist",
                 "noplaylist": True,
                 "quiet": True,
                 "no_warnings": True,
@@ -157,7 +161,28 @@ class YtDlpBackend:
             }
             try:
                 with YoutubeDL(options) as downloader:
-                    result = downloader.download([query])
+                    search = downloader.extract_info(query, download=False)
+                    candidate = _select_search_result(search, track)
+                    if candidate is None:
+                        log.warning(
+                            "Не найден подходящий результат YouTube для %s",
+                            track.display_name,
+                        )
+                        return False
+                    candidate_url = candidate.get("url")
+                    if not isinstance(candidate_url, str) or not candidate_url:
+                        log.warning(
+                            "Результат поиска YouTube не содержит URL для %s",
+                            track.display_name,
+                        )
+                        return False
+                    log.info(
+                        "Выбран результат YouTube для %s: %s (%s с)",
+                        track.display_name,
+                        candidate.get("title", candidate_url),
+                        candidate.get("duration", "?"),
+                    )
+                    result = downloader.download([candidate_url])
             except (DownloadError, OSError, _DownloadCancelled) as exc:
                 if self._cancelled():
                     log.info("Загрузка отменена: %s", track.display_name)
@@ -186,6 +211,67 @@ class YtDlpBackend:
 
 class _DownloadCancelled(RuntimeError):
     pass
+
+
+def _select_search_result(
+    search: object,
+    track: Track,
+) -> dict[str, Any] | None:
+    if not isinstance(search, dict):
+        return None
+    entries = search.get("entries")
+    if not isinstance(entries, list):
+        return None
+
+    wanted_title = _search_words(track.title)
+    wanted_artist = _search_words(track.artist)
+    if not wanted_title or not wanted_artist:
+        return None
+
+    matches: list[tuple[float, dict[str, Any]]] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        candidate_title = _search_words(str(entry.get("title", "")))
+        creator = " ".join(
+            str(entry.get(field, ""))
+            for field in ("artist", "channel", "uploader", "description")
+        )
+        candidate_artist = _search_words(creator)
+        title_coverage = _word_coverage(wanted_title, candidate_title)
+        artist_coverage = _word_coverage(
+            wanted_artist,
+            candidate_artist + candidate_title,
+        )
+        if title_coverage < 0.75 or artist_coverage < 0.5:
+            continue
+
+        normalized_title = " ".join(candidate_title)
+        normalized_creator = " ".join(candidate_artist)
+        wanted_title_phrase = " ".join(wanted_title)
+        wanted_artist_phrase = " ".join(wanted_artist)
+        score = title_coverage * 4 + artist_coverage * 3
+        if wanted_title_phrase in normalized_title:
+            score += 4
+        if wanted_artist_phrase in f"{normalized_title} {normalized_creator}":
+            score += 3
+        if "topic" in candidate_artist:
+            score += 0.5
+        matches.append((score, entry))
+
+    if not matches:
+        return None
+    return max(matches, key=lambda match: match[0])[1]
+
+
+def _search_words(value: str) -> tuple[str, ...]:
+    normalized = unicodedata.normalize("NFKD", value).casefold()
+    normalized = normalized.translate(str.maketrans("", "", "'’ʼ"))
+    return tuple(re.findall(r"[^\W_]+", normalized, flags=re.UNICODE))
+
+
+def _word_coverage(wanted: tuple[str, ...], candidate: tuple[str, ...]) -> float:
+    return len(set(wanted) & set(candidate)) / len(set(wanted))
 
 
 def apply_track_tags(
