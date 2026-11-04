@@ -268,10 +268,10 @@ The application version has a single source in `yt_music_telegram_sync.__version
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
-.\release.ps1 -Version 1.2.0 -Push
+.\release.ps1 -Version 1.2.1 -Push
 ```
 
-Every push to `main` runs CI without publishing a GitHub Release. Use the command above to publish a release: the script creates a release commit when needed, creates the stable `v1.2.0` tag, and pushes both. Pushing that tag starts the release workflow, verifies the version, and publishes a regular GitHub Release with a wheel and source ZIP. See [CONTRIBUTING.md](CONTRIBUTING.md) or [CONTRIBUTING_RU.md](CONTRIBUTING_RU.md).
+Every push to `main` runs CI without publishing a GitHub Release. Use the command above to publish a release: the script creates a release commit when needed, creates the stable `v1.2.1` tag, and pushes both. Pushing that tag starts the release workflow, verifies the version, and publishes a regular GitHub Release with a wheel and source ZIP. See [CONTRIBUTING.md](CONTRIBUTING.md) or [CONTRIBUTING_RU.md](CONTRIBUTING_RU.md).
 
 Project structure:
 

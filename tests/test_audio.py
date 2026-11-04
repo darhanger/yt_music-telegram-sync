@@ -65,6 +65,27 @@ class YtDlpBackendTests(unittest.TestCase):
 
         self.assertIsNone(selected)
 
+    def test_search_accepts_official_title_without_feature_credit(self) -> None:
+        wrong_version = {
+            "title": "Don't Speak",
+            "channel": "Hidden Citizens",
+            "url": "https://www.youtube.com/watch?v=wrong",
+        }
+        official = {
+            "title": "Don't Speak (Epic Trailer Version)",
+            "channel": "Hidden Citizens",
+            "description": "Hidden Citizens · Tim Halperin",
+            "duration": 178,
+            "url": "https://www.youtube.com/watch?v=55cJGrrvQlo",
+        }
+
+        selected = _select_search_result(
+            {"entries": [wrong_version, official]},
+            Track("Don't Speak (Epic Trailer Version) (feat. Tim Halperin)", "Hidden Citizens"),
+        )
+
+        self.assertIs(selected, official)
+
 
 class ArtworkLoaderTests(unittest.TestCase):
     def test_streaming_download_stops_when_size_limit_is_exceeded(self) -> None:
