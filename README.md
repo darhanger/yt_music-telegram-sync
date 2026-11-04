@@ -277,6 +277,8 @@ Project structure:
 
 ```text
 src/yt_music_telegram_sync/  application and CLI
+  assets/setup_wizard.ui   Qt Designer setup form
+  assets/*.qss             dark and light form themes
 tests/                       unit and regression tests
 .github/workflows/           Windows CI for Python 3.11–3.14
 setup.ps1                    installation and initial setup
@@ -284,6 +286,10 @@ release.ps1                  version, validation, tagging, and optional push
 start_tray.vbs               silent system-tray launcher
 start_console.bat            diagnostic launcher
 ```
+
+The setup window uses PySide6. Open `src/yt_music_telegram_sync/assets/setup_wizard.ui`
+in Qt Designer to edit its layout. Event handlers live in `setup_wizard.py` and
+network operations in `setup_backend.py`.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
 

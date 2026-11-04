@@ -1,0 +1,30 @@
+QDialog#SetupWizardForm { background: #131c27; color: #e9f1f8; font: 10pt "Segoe UI"; }
+QLabel { color: #d7e5f0; }
+QLabel#titleLabel { color: #f7fbff; font-size: 20pt; font-weight: 700; }
+QLabel#subtitleLabel { color: #a9c3d5; padding: 0 0 8px 2px; }
+QLabel#versionLabel { color: #93aabc; }
+QLabel#lastfmNote, QLabel#telegramPasswordNote, QLabel#notificationsNote { color: #a9bdcd; padding: 5px 2px; }
+QLabel#statusLabel { background: #1d2a38; border: 1px solid #304255; border-radius: 8px; padding: 9px; }
+QLabel#statusIndicator { font-size: 17pt; }
+QLabel#footerHint { color: #9bb0c0; }
+QGroupBox { background: #1d2a38; border: 1px solid #304255; border-radius: 11px; margin-top: 12px; padding: 16px 12px 12px; font-weight: 600; }
+QGroupBox::title { subcontrol-origin: margin; left: 16px; padding: 0 5px; color: #f3f8fc; }
+QTabWidget::pane { border: 1px solid #304255; border-radius: 8px; background: #172331; }
+QTabBar::tab { background: #202e3e; color: #b9c9d7; border: 1px solid #314255; padding: 9px 17px; margin-right: 3px; border-top-left-radius: 7px; border-top-right-radius: 7px; }
+QTabBar::tab:selected { background: #208ec8; color: white; border-color: #208ec8; }
+QTabBar::tab:hover:!selected { background: #2c4054; }
+QPushButton { background: #27384a; color: #edf7ff; border: 1px solid #496076; border-radius: 7px; padding: 7px 12px; min-height: 20px; }
+QPushButton:hover { background: #31516b; border-color: #64abd7; }
+QPushButton:pressed { background: #1f709e; }
+QPushButton:disabled { color: #8091a0; background: #222e3a; border-color: #344456; }
+QPushButton#saveButton, QPushButton#testLastfmButton { background: #208ec8; border-color: #42b6ed; }
+QPushButton#saveButton:hover, QPushButton#testLastfmButton:hover { background: #28a4e3; }
+QLineEdit, QComboBox, QScrollArea { background: #101a25; color: #eaf2f9; border: 1px solid #35495d; border-radius: 7px; selection-background-color: #247faf; }
+QLineEdit, QComboBox { padding: 7px; min-height: 20px; }
+QLineEdit:disabled { color: #8091a0; background: #222e3a; }
+QComboBox QAbstractItemView { background: #202e3e; color: #eaf2f9; selection-background-color: #247faf; }
+QCheckBox { spacing: 8px; }
+QScrollArea { border: none; }
+QWidget#syncContent { background: #172331; }
+QScrollBar:vertical { background: #172331; width: 11px; }
+QScrollBar::handle:vertical { background: #456074; border-radius: 5px; min-height: 20px; }

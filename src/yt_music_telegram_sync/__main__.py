@@ -6,7 +6,8 @@ import os
 import sys
 import time
 from pathlib import Path
-from tkinter import messagebox
+
+from PySide6.QtWidgets import QApplication, QMessageBox
 
 from . import __version__
 from .config import AppConfig, ConfigurationError, default_config_path
@@ -95,7 +96,9 @@ def _show_error(message: str, console: bool) -> None:
     if console:
         print(message, file=sys.stderr)
     else:
-        messagebox.showerror("YT Music → Telegram", message)
+        app = QApplication.instance() or QApplication(sys.argv)
+        QMessageBox.critical(None, "YT Music → Telegram", message)
+        app.processEvents()
 
 
 def _configure_windows_streams() -> None:

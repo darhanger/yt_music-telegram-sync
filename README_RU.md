@@ -277,6 +277,8 @@ Set-ExecutionPolicy -Scope Process Bypass
 
 ```text
 src/yt_music_telegram_sync/  приложение и CLI
+  assets/setup_wizard.ui   форма настроек для Qt Designer
+  assets/*.qss             тёмная и светлая темы формы
 tests/                       модульные и регрессионные тесты
 .github/workflows/           Windows CI для Python 3.11–3.14
 setup.ps1                    установка и первичная настройка
@@ -284,6 +286,10 @@ release.ps1                  версия, проверки, тег и необ�
 start_tray.vbs               тихий запуск в системном трее
 start_console.bat            диагностический запуск
 ```
+
+Окно настройки использует PySide6. Форму можно открыть в Qt Designer через
+`src/yt_music_telegram_sync/assets/setup_wizard.ui`; обработчики находятся в
+`setup_wizard.py`, сетевые операции — в `setup_backend.py`.
 
 Правила для изменений описаны в [CONTRIBUTING.md](CONTRIBUTING.md).
 

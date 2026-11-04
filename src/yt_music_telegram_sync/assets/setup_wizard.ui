@@ -1,0 +1,532 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ui version="4.0">
+  <class>SetupWizardForm</class>
+  <widget class="QDialog" name="SetupWizardForm">
+    <property name="geometry">
+      <rect>
+        <x>0</x>
+        <y>0</y>
+        <width>920</width>
+        <height>840</height>
+      </rect>
+    </property>
+    <property name="windowTitle">
+      <string>YT Music → Telegram</string>
+    </property>
+    <layout class="QVBoxLayout" name="mainLayout">
+      <item>
+        <layout class="QHBoxLayout" name="headerLayout">
+          <item>
+            <widget class="QLabel" name="titleLabel">
+              <property name="text">
+                <string>♫  YT Music → Telegram</string>
+              </property>
+            </widget>
+          </item>
+          <item>
+            <widget class="QLabel" name="versionLabel">
+              <property name="text">
+                <string />
+              </property>
+            </widget>
+          </item>
+          <item>
+            <widget class="QLabel" name="languageLabel">
+              <property name="text">
+                <string>Язык</string>
+              </property>
+            </widget>
+          </item>
+          <item>
+            <widget class="QComboBox" name="languageCombo" />
+          </item>
+          <item>
+            <widget class="QCheckBox" name="darkModeCheck">
+              <property name="text">
+                <string>Тёмная тема</string>
+              </property>
+            </widget>
+          </item>
+        </layout>
+      </item>
+      <item>
+        <widget class="QLabel" name="subtitleLabel">
+          <property name="text">
+            <string>Last.fm nowplaying и музыка вашего профиля</string>
+          </property>
+        </widget>
+      </item>
+      <item>
+        <widget class="QTabWidget" name="tabs">
+          <widget class="QWidget" name="lastfmTab">
+            <attribute name="title">
+              <string>Last.fm</string>
+            </attribute>
+            <layout class="QVBoxLayout" name="lastfmLayout">
+              <item>
+                <widget class="QGroupBox" name="lastfmGroup">
+                  <property name="title">
+                    <string>Last.fm</string>
+                  </property>
+                  <layout class="QFormLayout" name="lastfmForm">
+                    <item row="0" column="0">
+                      <widget class="QLabel" name="lastfmUsernameLabel">
+                        <property name="text">
+                          <string>Имя пользователя</string>
+                        </property>
+                      </widget>
+                    </item>
+                    <item row="0" column="1">
+                      <widget class="QLineEdit" name="lastfmUsernameEdit" />
+                    </item>
+                    <item row="1" column="0">
+                      <widget class="QLabel" name="lastfmApiKeyLabel">
+                        <property name="text">
+                          <string>API key</string>
+                        </property>
+                      </widget>
+                    </item>
+                    <item row="1" column="1">
+                      <widget class="QLineEdit" name="lastfmApiKeyEdit">
+                        <property name="echoMode">
+                          <enum>QLineEdit::Password</enum>
+                        </property>
+                      </widget>
+                    </item>
+                  </layout>
+                </widget>
+              </item>
+              <item>
+                <widget class="QLabel" name="lastfmNote">
+                  <property name="text">
+                    <string>Пароль здесь не вводится: для чтения nowplaying Last.fm требует только username и API key. В Web Scrobbler вход выполняется на странице Last.fm.</string>
+                  </property>
+                  <property name="wordWrap">
+                    <bool>true</bool>
+                  </property>
+                </widget>
+              </item>
+              <item>
+                <widget class="QCheckBox" name="showLastfmSecretsCheck">
+                  <property name="text">
+                    <string>Показывать реквизиты</string>
+                  </property>
+                </widget>
+              </item>
+              <item>
+                <layout class="QHBoxLayout" name="lastfmActions">
+                  <item>
+                    <widget class="QPushButton" name="openApiButton">
+                      <property name="text">
+                        <string>Получить API key</string>
+                      </property>
+                    </widget>
+                  </item>
+                  <item>
+                    <widget class="QPushButton" name="openScrobblerButton">
+                      <property name="text">
+                        <string>Web Scrobbler</string>
+                      </property>
+                    </widget>
+                  </item>
+                  <item>
+                    <widget class="QPushButton" name="testLastfmButton">
+                      <property name="text">
+                        <string>Проверить Last.fm</string>
+                      </property>
+                    </widget>
+                  </item>
+                </layout>
+              </item>
+              <item>
+                <spacer name="lastfmSpacer">
+                  <property name="orientation">
+                    <enum>Qt::Vertical</enum>
+                  </property>
+                  <property name="sizeHint" stdset="0">
+                    <size>
+                      <width>20</width>
+                      <height>40</height>
+                    </size>
+                  </property>
+                </spacer>
+              </item>
+            </layout>
+          </widget>
+          <widget class="QWidget" name="telegramTab">
+            <attribute name="title">
+              <string>Telegram</string>
+            </attribute>
+            <layout class="QVBoxLayout" name="telegramLayout">
+              <item>
+                <widget class="QGroupBox" name="telegramGroup">
+                  <property name="title">
+                    <string>Telegram</string>
+                  </property>
+                  <layout class="QFormLayout" name="telegramForm">
+                    <item row="0" column="0">
+                      <widget class="QLabel" name="telegramApiIdLabel">
+                        <property name="text">
+                          <string>API ID</string>
+                        </property>
+                      </widget>
+                    </item>
+                    <item row="0" column="1">
+                      <widget class="QLineEdit" name="telegramApiIdEdit" />
+                    </item>
+                    <item row="1" column="0">
+                      <widget class="QLabel" name="telegramApiHashLabel">
+                        <property name="text">
+                          <string>API hash</string>
+                        </property>
+                      </widget>
+                    </item>
+                    <item row="1" column="1">
+                      <widget class="QLineEdit" name="telegramApiHashEdit">
+                        <property name="echoMode">
+                          <enum>QLineEdit::Password</enum>
+                        </property>
+                      </widget>
+                    </item>
+                    <item row="2" column="0">
+                      <widget class="QLabel" name="telegramPhoneLabel">
+                        <property name="text">
+                          <string>Телефон</string>
+                        </property>
+                      </widget>
+                    </item>
+                    <item row="2" column="1">
+                      <widget class="QLineEdit" name="telegramPhoneEdit">
+                        <property name="echoMode">
+                          <enum>QLineEdit::Password</enum>
+                        </property>
+                      </widget>
+                    </item>
+                    <item row="3" column="0">
+                      <widget class="QLabel" name="telegramCodeLabel">
+                        <property name="text">
+                          <string>Код из Telegram</string>
+                        </property>
+                      </widget>
+                    </item>
+                    <item row="3" column="1">
+                      <widget class="QLineEdit" name="telegramCodeEdit" />
+                    </item>
+                    <item row="4" column="0">
+                      <widget class="QLabel" name="telegramPasswordLabel">
+                        <property name="text">
+                          <string>Пароль Telegram 2FA</string>
+                        </property>
+                      </widget>
+                    </item>
+                    <item row="4" column="1">
+                      <widget class="QLineEdit" name="telegramPasswordEdit">
+                        <property name="echoMode">
+                          <enum>QLineEdit::Password</enum>
+                        </property>
+                      </widget>
+                    </item>
+                  </layout>
+                </widget>
+              </item>
+              <item>
+                <widget class="QCheckBox" name="showTelegramSecretsCheck">
+                  <property name="text">
+                    <string>Показывать реквизиты</string>
+                  </property>
+                </widget>
+              </item>
+              <item>
+                <widget class="QLabel" name="telegramPasswordNote">
+                  <property name="text">
+                    <string>Пароль 2FA используется только при входе и не сохраняется.</string>
+                  </property>
+                  <property name="wordWrap">
+                    <bool>true</bool>
+                  </property>
+                </widget>
+              </item>
+              <item>
+                <layout class="QHBoxLayout" name="telegramActions">
+                  <item>
+                    <widget class="QPushButton" name="sendCodeButton">
+                      <property name="text">
+                        <string>1. Отправить код</string>
+                      </property>
+                    </widget>
+                  </item>
+                  <item>
+                    <widget class="QPushButton" name="signInButton">
+                      <property name="text">
+                        <string>2. Войти в Telegram</string>
+                      </property>
+                    </widget>
+                  </item>
+                </layout>
+              </item>
+              <item>
+                <spacer name="telegramSpacer">
+                  <property name="orientation">
+                    <enum>Qt::Vertical</enum>
+                  </property>
+                  <property name="sizeHint" stdset="0">
+                    <size>
+                      <width>20</width>
+                      <height>40</height>
+                    </size>
+                  </property>
+                </spacer>
+              </item>
+            </layout>
+          </widget>
+          <widget class="QWidget" name="syncTab">
+            <attribute name="title">
+              <string>Синхронизация</string>
+            </attribute>
+            <layout class="QVBoxLayout" name="syncLayout">
+              <item>
+                <widget class="QScrollArea" name="syncScroll">
+                  <property name="widgetResizable">
+                    <bool>true</bool>
+                  </property>
+                  <widget class="QWidget" name="syncContent">
+                    <layout class="QVBoxLayout" name="syncContentLayout">
+                      <item>
+                        <widget class="QGroupBox" name="behaviorGroup">
+                          <property name="title">
+                            <string>Поведение</string>
+                          </property>
+                          <layout class="QFormLayout" name="behaviorForm">
+                            <item row="0" column="0">
+                              <widget class="QLabel" name="pollIntervalLabel">
+                                <property name="text">
+                                  <string>Опрос Last.fm, секунд</string>
+                                </property>
+                              </widget>
+                            </item>
+                            <item row="0" column="1">
+                              <widget class="QLineEdit" name="pollIntervalEdit" />
+                            </item>
+                            <item row="1" column="0">
+                              <widget class="QLabel" name="absentConfirmationsLabel">
+                                <property name="text">
+                                  <string>Проверок перед idle</string>
+                                </property>
+                              </widget>
+                            </item>
+                            <item row="1" column="1">
+                              <widget class="QLineEdit" name="absentConfirmationsEdit" />
+                            </item>
+                            <item row="2" column="0">
+                              <widget class="QLabel" name="cacheSizeLabel">
+                                <property name="text">
+                                  <string>Треков в истории</string>
+                                </property>
+                              </widget>
+                            </item>
+                            <item row="2" column="1">
+                              <widget class="QLineEdit" name="cacheSizeEdit" />
+                            </item>
+                            <item row="3" column="0">
+                              <widget class="QLabel" name="audioModeLabel">
+                                <property name="text">
+                                  <string>Режим аудио</string>
+                                </property>
+                              </widget>
+                            </item>
+                            <item row="3" column="1">
+                              <widget class="QComboBox" name="audioModeCombo" />
+                            </item>
+                            <item row="4" column="0">
+                              <widget class="QLabel" name="outputModeLabel">
+                                <property name="text">
+                                  <string>Куда отправлять музыку</string>
+                                </property>
+                              </widget>
+                            </item>
+                            <item row="4" column="1">
+                              <widget class="QComboBox" name="outputModeCombo" />
+                            </item>
+                            <item row="5" column="0">
+                              <widget class="QLabel" name="personalChannelLabel">
+                                <property name="text">
+                                  <string>Канал для nowplaying</string>
+                                </property>
+                              </widget>
+                            </item>
+                            <item row="5" column="1">
+                              <layout class="QHBoxLayout" name="channelRow">
+                                <item>
+                                  <widget class="QLineEdit" name="personalChannelEdit" />
+                                </item>
+                                <item>
+                                  <widget class="QPushButton" name="selectChannelButton">
+                                    <property name="text">
+                                      <string>Выбрать…</string>
+                                    </property>
+                                  </widget>
+                                </item>
+                              </layout>
+                            </item>
+                            <item row="6" column="0">
+                              <widget class="QCheckBox" name="emojiEnabledCheck">
+                                <property name="text">
+                                  <string>Emoji status при nowplaying</string>
+                                </property>
+                              </widget>
+                            </item>
+                            <item row="6" column="1">
+                              <layout class="QHBoxLayout" name="emojiRow">
+                                <item>
+                                  <widget class="QLineEdit" name="playingEmojiEdit" />
+                                </item>
+                                <item>
+                                  <widget class="QPushButton" name="selectEmojiButton">
+                                    <property name="text">
+                                      <string>Выбрать…</string>
+                                    </property>
+                                  </widget>
+                                </item>
+                              </layout>
+                            </item>
+                            <item row="7" column="0">
+                              <widget class="QLabel" name="downloadWorkersLabel">
+                                <property name="text">
+                                  <string>Параллельных загрузок (1–4)</string>
+                                </property>
+                              </widget>
+                            </item>
+                            <item row="7" column="1">
+                              <widget class="QLineEdit" name="downloadWorkersEdit" />
+                            </item>
+                            <item row="8" column="0" colspan="2">
+                              <widget class="QCheckBox" name="removeWhenIdleCheck">
+                                <property name="text">
+                                  <string>Удалять музыку профиля, когда nowplaying исчез</string>
+                                </property>
+                              </widget>
+                            </item>
+                          </layout>
+                        </widget>
+                      </item>
+                      <item>
+                        <widget class="QGroupBox" name="notificationsGroup">
+                          <property name="title">
+                            <string>Уведомления</string>
+                          </property>
+                          <layout class="QVBoxLayout" name="notificationsLayout">
+                            <item>
+                              <widget class="QCheckBox" name="notificationsEnabledCheck">
+                                <property name="text">
+                                  <string>Показывать системные уведомления</string>
+                                </property>
+                              </widget>
+                            </item>
+                            <item>
+                              <widget class="QCheckBox" name="notificationSoundCheck">
+                                <property name="text">
+                                  <string>Воспроизводить звук уведомлений</string>
+                                </property>
+                              </widget>
+                            </item>
+                            <item>
+                              <widget class="QLabel" name="notificationsNote">
+                                <property name="text">
+                                  <string>Отключение звука действует только на уведомления этого приложения.</string>
+                                </property>
+                                <property name="wordWrap">
+                                  <bool>true</bool>
+                                </property>
+                              </widget>
+                            </item>
+                          </layout>
+                        </widget>
+                      </item>
+                      <item>
+                        <spacer name="syncSpacer">
+                          <property name="orientation">
+                            <enum>Qt::Vertical</enum>
+                          </property>
+                          <property name="sizeHint" stdset="0">
+                            <size>
+                              <width>20</width>
+                              <height>0</height>
+                            </size>
+                          </property>
+                        </spacer>
+                      </item>
+                    </layout>
+                  </widget>
+                </widget>
+              </item>
+            </layout>
+          </widget>
+        </widget>
+      </item>
+      <item>
+        <layout class="QHBoxLayout" name="statusLayout">
+          <item>
+            <widget class="QLabel" name="statusIndicator">
+              <property name="text">
+                <string>●</string>
+              </property>
+            </widget>
+          </item>
+          <item>
+            <widget class="QLabel" name="statusLabel">
+              <property name="text">
+                <string>Заполните параметры и проверьте подключения</string>
+              </property>
+              <property name="sizePolicy">
+                <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
+                  <horstretch>0</horstretch>
+                  <verstretch>0</verstretch>
+                </sizepolicy>
+              </property>
+            </widget>
+          </item>
+        </layout>
+      </item>
+      <item>
+        <layout class="QHBoxLayout" name="footerLayout">
+          <item>
+            <widget class="QLabel" name="footerHint">
+              <property name="text">
+                <string>Ctrl+S — сохранить</string>
+              </property>
+            </widget>
+          </item>
+          <item>
+            <spacer name="footerSpacer">
+              <property name="orientation">
+                <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+                <size>
+                  <width>40</width>
+                  <height>20</height>
+                </size>
+              </property>
+            </spacer>
+          </item>
+          <item>
+            <widget class="QPushButton" name="cancelButton">
+              <property name="text">
+                <string>Отмена</string>
+              </property>
+            </widget>
+          </item>
+          <item>
+            <widget class="QPushButton" name="saveButton">
+              <property name="text">
+                <string>Сохранить</string>
+              </property>
+            </widget>
+          </item>
+        </layout>
+      </item>
+    </layout>
+  </widget>
+  <resources />
+  <connections />
+</ui>

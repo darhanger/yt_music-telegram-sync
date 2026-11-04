@@ -1,17 +1,21 @@
 import asyncio
+import os
 import tempfile
 import unittest
 from pathlib import Path
 from typing import ClassVar
 from unittest.mock import Mock, patch
 
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6.QtCore import QTimer  # noqa: E402
+from PySide6.QtWidgets import QApplication, QCheckBox, QLabel, QLineEdit, QPushButton  # noqa: E402
 from telethon import functions, types
 from telethon.errors import SessionPasswordNeededError
 
 from yt_music_telegram_sync.config import AppConfig
 from yt_music_telegram_sync.setup_wizard import (
     SetupWizard,
-    _mix_color,
     _telegram_capture_personal_channel,
     _telegram_capture_playing_emoji,
     _telegram_sign_in,
@@ -121,7 +125,7 @@ class TelegramSetupTests(unittest.TestCase):
 
     def test_code_and_2fa_password_use_same_connection(self) -> None:
         with patch(
-            "yt_music_telegram_sync.setup_wizard.TelegramClient", _TwoFactorClient
+            "yt_music_telegram_sync.setup_backend.TelegramClient", _TwoFactorClient
         ):
             needs_password = asyncio.run(
                 _telegram_sign_in(
@@ -145,7 +149,7 @@ class TelegramSetupTests(unittest.TestCase):
 
     def test_cancelled_2fa_reports_that_new_code_is_required(self) -> None:
         with patch(
-            "yt_music_telegram_sync.setup_wizard.TelegramClient", _TwoFactorClient
+            "yt_music_telegram_sync.setup_backend.TelegramClient", _TwoFactorClient
         ):
             needs_password = asyncio.run(
                 _telegram_sign_in(
@@ -171,7 +175,7 @@ class TelegramSetupTests(unittest.TestCase):
             return True
 
         with patch(
-            "yt_music_telegram_sync.setup_wizard.TelegramClient",
+                "yt_music_telegram_sync.setup_backend.TelegramClient",
             _EmojiSelectionClient,
         ):
             document_id = asyncio.run(
@@ -191,7 +195,7 @@ class TelegramSetupTests(unittest.TestCase):
             return True
 
         with patch(
-            "yt_music_telegram_sync.setup_wizard.TelegramClient",
+                "yt_music_telegram_sync.setup_backend.TelegramClient",
             _ChannelSelectionClient,
         ):
             selected = asyncio.run(
@@ -206,88 +210,57 @@ class TelegramSetupTests(unittest.TestCase):
         self.assertTrue(client.disconnected)
 
 
-class SetupPersistenceTests(unittest.TestCase):
-    def test_success_status_uses_green_indicator_style(self) -> None:
-        wizard = object.__new__(SetupWizard)
-        wizard.status = Mock()
-        wizard._status_indicator = Mock()
+class QtSetupTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QApplication.instance() or QApplication([])
 
-        wizard._set_status("Authorized", "success")
+    def _wizard(self, directory: str, config: AppConfig) -> tuple[SetupWizard, Path, Path]:
+        config_path = Path(directory) / "config.json"
+        draft_path = Path(directory) / "config.draft.json"
+        config.save(config_path)
+        return SetupWizard(config_path), config_path, draft_path
 
-        wizard.status.set.assert_called_once_with("Authorized")
-        wizard._status_indicator.configure.assert_called_once_with(
-            style="Success.StatusIcon.TLabel"
-        )
-
-    def test_hover_color_is_interpolated(self) -> None:
-        self.assertEqual(_mix_color("#000000", "#FFFFFF", 0.5), "#808080")
-
-    def test_combined_mode_and_emoji_checkbox_enable_expected_controls(self) -> None:
-        wizard = object.__new__(SetupWizard)
-        wizard.telegram_output_mode = Mock()
-        wizard.telegram_output_mode.get.return_value = "profile_and_channel"
-        wizard.telegram_playing_emoji_enabled = Mock()
-        wizard.telegram_playing_emoji_enabled.get.return_value = False
-        wizard._personal_channel_entry = Mock()
-        wizard._personal_channel_button = Mock()
-        wizard._playing_emoji_entry = Mock()
-        wizard._playing_emoji_button = Mock()
-        wizard._cache_size_entry = Mock()
-        wizard._remove_when_idle_checkbox = Mock()
-
-        wizard._update_output_controls()
-
-        wizard._personal_channel_entry.configure.assert_called_with(state="normal")
-        wizard._cache_size_entry.configure.assert_called_with(state="normal")
-        wizard._playing_emoji_entry.configure.assert_called_with(state="disabled")
-
-        wizard.telegram_output_mode.get.return_value = "personal_channel"
-        wizard._update_output_controls()
-        wizard._cache_size_entry.configure.assert_called_with(state="normal")
-        wizard._remove_when_idle_checkbox.configure.assert_called_with(
-            state="disabled"
-        )
-
-        wizard.telegram_playing_emoji_enabled.get.return_value = True
-        wizard._update_emoji_controls()
-        wizard._playing_emoji_entry.configure.assert_called_with(state="normal")
-        wizard._playing_emoji_button.configure.assert_called_with(state="normal")
-
-    def test_save_persists_local_settings_without_network_checks(self) -> None:
+    def test_dialog_event_loop_returns_cancel_result(self) -> None:
         config = AppConfig(
             lastfm_username="user",
             lastfm_api_key="key",
             telegram_api_id=123,
             telegram_api_hash="hash",
-            audio_mode="mixed",
-            download_workers=3,
-            notifications_enabled=False,
-            notification_sound_enabled=False,
-            ui_language="en",
-            ui_theme="light",
         )
         with tempfile.TemporaryDirectory() as directory:
-            config_path = Path(directory) / "config.json"
-            draft_path = Path(directory) / "config.draft.json"
-            draft_path.touch()
-            wizard, root = self._wizard(config_path, config)
+            wizard, _, _ = self._wizard(directory, config)
+            QTimer.singleShot(0, wizard._cancel)
+            self.assertFalse(wizard.run())
 
+    def test_designer_form_saves_settings_and_language_theme(self) -> None:
+        config = AppConfig(
+            lastfm_username="user",
+            lastfm_api_key="key",
+            telegram_api_id=123,
+            telegram_api_hash="hash",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            wizard, config_path, draft_path = self._wizard(directory, config)
+            self.assertEqual(
+                wizard._widget("titleLabel", QLabel).text(),
+                "♫  YT Music → Telegram",
+            )
+            wizard._widget("downloadWorkersEdit", QLineEdit).setText("3")
+            wizard._widget("notificationsEnabledCheck", QCheckBox).setChecked(False)
+            wizard.language_combo.setCurrentIndex(wizard.language_combo.findData("en"))
+            wizard.dark_mode.setChecked(False)
             with patch(
                 "yt_music_telegram_sync.setup_wizard.default_draft_config_path",
                 return_value=draft_path,
             ):
                 wizard._save()
-
             loaded = AppConfig.load(config_path)
-
-        self.assertEqual(loaded.audio_mode, "mixed")
+        self.assertTrue(wizard.saved)
         self.assertEqual(loaded.download_workers, 3)
         self.assertFalse(loaded.notifications_enabled)
-        self.assertFalse(loaded.notification_sound_enabled)
         self.assertEqual(loaded.ui_language, "en")
         self.assertEqual(loaded.ui_theme, "light")
-        self.assertTrue(wizard.saved)
-        root.destroy.assert_called_once_with()
 
     def test_window_close_saves_valid_changes(self) -> None:
         config = AppConfig(
@@ -295,39 +268,71 @@ class SetupPersistenceTests(unittest.TestCase):
             lastfm_api_key="key",
             telegram_api_id=123,
             telegram_api_hash="hash",
-            audio_mode="audio",
         )
         with tempfile.TemporaryDirectory() as directory:
-            config_path = Path(directory) / "config.json"
-            draft_path = Path(directory) / "config.draft.json"
-            wizard, root = self._wizard(config_path, config)
-
+            wizard, config_path, draft_path = self._wizard(directory, config)
+            wizard._widget("cacheSizeEdit", QLineEdit).setText("37")
             with patch(
                 "yt_music_telegram_sync.setup_wizard.default_draft_config_path",
                 return_value=draft_path,
             ):
-                wizard._close()
-
+                wizard.root.close()
             loaded = AppConfig.load(config_path)
-
-        self.assertEqual(loaded.audio_mode, "audio")
         self.assertTrue(wizard.saved)
-        root.destroy.assert_called_once_with()
+        self.assertEqual(loaded.cache_size, 37)
 
-    @staticmethod
-    def _wizard(config_path: Path, config: AppConfig) -> tuple[SetupWizard, Mock]:
-        wizard = object.__new__(SetupWizard)
-        root = Mock()
-        wizard.config_path = config_path
-        wizard.saved = False
-        wizard.status = Mock()
-        wizard.ui_language = Mock()
-        wizard.ui_language.get.return_value = config.ui_language
-        wizard.root = root
-        wizard._config_from_form = Mock(  # type: ignore[method-assign]
-            return_value=config
+    def test_cancel_does_not_save(self) -> None:
+        config = AppConfig(
+            lastfm_username="user",
+            lastfm_api_key="key",
+            telegram_api_id=123,
+            telegram_api_hash="hash",
         )
-        return wizard, root
+        with tempfile.TemporaryDirectory() as directory:
+            wizard, config_path, _ = self._wizard(directory, config)
+            wizard._widget("cacheSizeEdit", QLineEdit).setText("37")
+            wizard._cancel()
+            loaded = AppConfig.load(config_path)
+        self.assertFalse(wizard.saved)
+        self.assertEqual(loaded.cache_size, 20)
+
+    def test_mode_and_emoji_toggle_controls(self) -> None:
+        config = AppConfig(
+            lastfm_username="user",
+            lastfm_api_key="key",
+            telegram_api_id=123,
+            telegram_api_hash="hash",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            wizard, _, _ = self._wizard(directory, config)
+            wizard.output_mode.setCurrentIndex(
+                wizard.output_mode.findData("profile_and_channel")
+            )
+            self.assertTrue(wizard._widget("personalChannelEdit", QLineEdit).isEnabled())
+            self.assertTrue(wizard._widget("removeWhenIdleCheck", QCheckBox).isEnabled())
+            wizard.output_mode.setCurrentIndex(
+                wizard.output_mode.findData("personal_channel")
+            )
+            self.assertFalse(wizard._widget("removeWhenIdleCheck", QCheckBox).isEnabled())
+            self.assertFalse(wizard._widget("playingEmojiEdit", QLineEdit).isEnabled())
+            wizard._widget("emojiEnabledCheck", QCheckBox).setChecked(True)
+            self.assertTrue(wizard._widget("playingEmojiEdit", QLineEdit).isEnabled())
+            self.assertTrue(wizard._widget("selectEmojiButton", QPushButton).isEnabled())
+            wizard._cancel()
+
+    def test_success_status_uses_green_indicator(self) -> None:
+        config = AppConfig(
+            lastfm_username="user",
+            lastfm_api_key="key",
+            telegram_api_id=123,
+            telegram_api_hash="hash",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            wizard, _, _ = self._wizard(directory, config)
+            wizard._set_status("Authorized", "success")
+            self.assertEqual(wizard._widget("statusLabel", QLabel).text(), "Authorized")
+            self.assertIn("#68d391", wizard._widget("statusIndicator", QLabel).styleSheet())
+            wizard._cancel()
 
 
 if __name__ == "__main__":
