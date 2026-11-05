@@ -3,10 +3,33 @@ from unittest.mock import Mock
 
 from yt_music_telegram_sync.config import AppConfig
 from yt_music_telegram_sync.lastfm import LastFmError
+from yt_music_telegram_sync.models import Track
 from yt_music_telegram_sync.service import SyncApplicationService
 
 
 class SyncApplicationServiceTests(unittest.TestCase):
+    def test_changed_lastfm_metadata_does_not_repeat_active_track(self) -> None:
+        service = SyncApplicationService(self._config())
+        lastfm = Mock()
+        first = Track("One", "Artist", album="Album", mbid="abc")
+        resumed = Track("One", "Artist", album="Other", mbid="xyz")
+        lastfm.get_now_playing.side_effect = [first, None, resumed]
+        sync = Mock()
+        sync.active_track = first
+        waits = 0
+
+        def wait(_timeout: float) -> None:
+            nonlocal waits
+            waits += 1
+            if waits == 3:
+                service._stop_event.set()
+
+        service._wait = wait  # type: ignore[assignment,method-assign]
+
+        service._poll_loop(lastfm, sync)
+
+        sync.handle_track.assert_called_once_with(first)
+
     def test_idle_cleanup_runs_once_until_a_track_appears(self) -> None:
         config = self._config()
         config.absent_confirmations = 2
@@ -22,7 +45,7 @@ class SyncApplicationServiceTests(unittest.TestCase):
             if waits == 4:
                 service._stop_event.set()
 
-        service._wait = wait  # type: ignore[method-assign]
+        service._wait = wait  # type: ignore[assignment,method-assign]
 
         service._poll_loop(lastfm, sync)
 

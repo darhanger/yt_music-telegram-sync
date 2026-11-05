@@ -9,10 +9,15 @@ class TrackTests(unittest.TestCase):
         second = Track(title="my song", artist="BJÖRK", album="album")
         self.assertEqual(first.identity, second.identity)
 
-    def test_mbid_takes_precedence(self) -> None:
-        first = Track(title="One", artist="Artist", mbid="ABC")
-        second = Track(title="Other", artist="Other", mbid="abc")
+    def test_album_and_mbid_do_not_split_same_song(self) -> None:
+        first = Track(title="One", artist="Artist", album="Album", mbid="ABC")
+        second = Track(title="One", artist="Artist", album="Other", mbid="XYZ")
         self.assertEqual(first.identity, second.identity)
+
+    def test_mbid_does_not_merge_different_songs(self) -> None:
+        first = Track(title="One", artist="Artist", mbid="ABC")
+        second = Track(title="Other", artist="Artist", mbid="ABC")
+        self.assertNotEqual(first.identity, second.identity)
 
 
 if __name__ == "__main__":

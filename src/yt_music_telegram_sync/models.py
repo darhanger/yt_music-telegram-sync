@@ -23,13 +23,12 @@ class Track:
 
     @property
     def identity(self) -> tuple[str, ...]:
-        if self.mbid:
-            return ("mbid", self.mbid.casefold())
+        # Last.fm may change the album or MBID between nowplaying responses for
+        # the same song. Neither field should trigger another Telegram post.
         return (
             "metadata",
             _normalize(self.artist),
             _normalize(self.title),
-            _normalize(self.album),
         )
 
     @property
