@@ -268,10 +268,10 @@ py -3.12 -m venv .venv
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
-.\release.ps1 -Version 1.2.2 -Push
+.\release.ps1 -Version 1.2.3 -Push
 ```
 
-Каждый push в `main` запускает CI без публикации GitHub Release. Для выпуска версии используйте команду выше: скрипт при необходимости создаст release-коммит, стабильный тег `v1.2.2` и отправит их в GitHub. Push этого тега запускает release workflow, сверяет версию и публикует обычный GitHub Release с wheel и ZIP исходников. Подробности находятся в [CONTRIBUTING_RU.md](CONTRIBUTING_RU.md) и [CONTRIBUTING.md](CONTRIBUTING.md).
+Каждый push в `main` запускает CI без публикации GitHub Release. Для выпуска версии используйте команду выше: скрипт при необходимости создаст release-коммит, стабильный тег `v1.2.3` и отправит их в GitHub. Push этого тега запускает release workflow, сверяет версию и публикует обычный GitHub Release с wheel и ZIP исходников. Подробности находятся в [CONTRIBUTING_RU.md](CONTRIBUTING_RU.md) и [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Структура проекта:
 

@@ -29,10 +29,10 @@ Maintainers create a release with a clean working tree:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
-.\release.ps1 -Version 1.2.0 -Push
+.\release.ps1 -Version 1.2.3 -Push
 ```
 
-Every push to `main` runs CI without publishing a GitHub Release. The script above updates the application version, runs all checks, creates a release commit when the version changes and the matching `v1.2.0` tag, then pushes both when `-Push` is specified. Pushing the stable tag starts the release workflow, which verifies the tag, builds the wheel and source archive, and publishes a regular GitHub Release with generated notes.
+Every push to `main` runs CI without publishing a GitHub Release. The script above updates the application version, runs all checks, creates a release commit when the version changes and the matching `v1.2.3` tag, then pushes both when `-Push` is specified. Pushing the stable tag starts the release workflow, which verifies the tag, builds the wheel and source archive, and publishes a regular GitHub Release with generated notes.
 
 Commits and tags are unsigned by default so the script also works with a non-interactive GPG setup. Add `-SignCommit -SignTag` when a configured GPG agent is available.
 
