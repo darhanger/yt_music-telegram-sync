@@ -1,3 +1,3 @@
 """Last.fm to Telegram profile and personal-channel synchronizer."""
 
-__version__ = "1.2.2"
+__version__ = "1.2.3"
